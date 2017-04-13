@@ -1,4 +1,5 @@
 (ns maelstrom.core
+  (:gen-class)
   (:refer-clojure :exclude [run! test])
   (:require [clojure.tools.logging :refer [info warn]]
             [maelstrom [net :as net]
@@ -6,6 +7,7 @@
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [client :as client]
+                    [core :as core]
                     [control :as c]
                     [db :as db]
                     [generator :as gen]
@@ -14,49 +16,50 @@
                     [tests :as tests]
                     [util :as util :refer [timeout]]]
             [jepsen.checker.timeline :as timeline]
-            [jepsen.control.util :as cu]
-
-(defn raft-init!
-  "Sends initial raft messages to all nodes."
-  [net nodes timeout-ms]
-  (let [clients (map net/sync-client! (repeat (count nodes) net))]
-    (try
-      ; Send messages
-      (mapv (fn [c n]
-              (net/sync-client-send!
-                c
-                {:dest (:node-id n)
-                 :body {:type :raft_init
-                        :node_id  (:node-id n)
-                        :node_ids (map :node-id nodes)}}))
-            clients
-            nodes)
-
-      ; Wait for responses
-      (mapv (fn [c n]
-              (let [msg (net/sync-client-recv! c timeout-ms)]
-                (when (not= "raft_init_ok" (:type (:body msg)))
-                  (throw (RuntimeException.
-                           (str "Expected a raft_init_ok message, but node "
-                                (:node-id n) " returned "
-                                (pr-str msg)))))))
-            clients
-            nodes)
-
-      (info "Raft initialization complete:" (map :node-id nodes))
-
-      (finally
-        (mapv net/sync-client-close! clients)))))
+            [jepsen.control.util :as cu]))
 
 (defn db
-  [net]
-  (reify db/DB
-    (setup! [_ test node]
-      (info "Setting up" node))
+  "Options:
 
-    (teardown! [_ test node]
-      (info "Tearing down" node))))
+      :bin - a binary to run
+      :args - args to that binary
+      :net - a network"
+  [opts]
+  (let [net (:net opts)
+        processes (atom {})]
+    (reify db/DB
+      (setup! [_ test node-id]
+        (info "Setting up" node-id)
+        (swap! processes assoc node-id
+               (process/start-node! {:node-id  node-id
+                                     :bin      (:bin opts)
+                                     :args     (:args opts)
+                                     :net      net
+                                     :dir      "/tmp"
+                                     :log-file (str node-id ".log")}))
 
+        (let [client (net/sync-client! net)]
+          (try
+            (let [res (net/sync-client-send-recv!
+                        client
+                        {:dest node-id
+                         :body {:type "raft_init"
+                                :node_id node-id
+                                :node_ids (:nodes test)}}
+                        10000)]
+              (when (not= "raft_init_ok" (:type (:body res)))
+                (throw (RuntimeException.
+                         (str "Expected a raft_init_ok message, but node "
+                              node-id " returned "
+                              (pr-str res))))))
+            (finally (net/sync-client-close! client)))))
+
+
+      (teardown! [_ test node]
+        (when-let [p (get @processes node)]
+          (info "Tearing down" node)
+          (process/stop-node! p)
+          (swap! processes dissoc node))))))
 
 (defn test
   "Construct a Jepsen test. Options:
@@ -64,22 +67,18 @@
       :bin      Path to a binary to run
       :args     Arguments to that binary"
   [opts]
-  (assoc tests/noop-test
-         :name "maelstrom"
-         :ssh  {:dummy? true}
-         :db   (db)))
+  (let [net (net/net)]
+    (merge tests/noop-test
+           opts
+           {:name "maelstrom"
+            :ssh  {:dummy? true}
+            :db   (db {:net net
+                       :bin "demo.rb"
+                       :args ["hi"]})
+            :nodes ["a" "b" "c"]})))
 
-(defn run!
-  [bin args]
-  (let [net      (net/net)
-        node-ids ["a" "b" "c"]
-        nodes    (mapv (fn [node-id]
-                         (process/start-node! {:node-id  node-id
-                                               :bin      bin
-                                               :args     args
-                                               :net      net
-                                               :dir      "/tmp"
-                                               :log-file (str node-id ".log")}))
-                       node-ids)]
-    (raft-init! net nodes 10000)
-    (mapv process/stop-node! nodes)))
+(defn -main
+  [& args]
+  (cli/run! (merge (cli/single-test-cmd {:test-fn test})
+                   (cli/serve-cmd))
+            args))
