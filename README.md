@@ -26,7 +26,7 @@ Maelstrom speaks JSON messages, separated by newlines (`\n`). Nodes receive
 messages on STDIN, and send messages by printing them to stdout. Each message
 is a JSON object with the following mandatory keys:
 
-```json
+```edn
 {"src"      A string identifying the node this message came from
  "dest"     A string identifying the node this message is to
  "body"     An object: the payload of the message}
@@ -34,7 +34,7 @@ is a JSON object with the following mandatory keys:
 
 Bodies have the following reserved keys:
 
-```json
+```edn
 {"type"           (mandatory) A string identifying the type of message this is
  "msg_id"         (optional)  A unique integer identifier
  "in_reply_to"    (optional)  For req/response, the msg_id of the request}
@@ -52,7 +52,7 @@ Maelstrom defines the following body types:
 Maelstrom will send a single initialization message to each node when it
 starts, telling the node what its ID is, and who the other nodes are. When you receive this message, initialize your internal Raft state.
 
-```json
+```edn
 {"type"     "raft_init"
  "msg_id"   An integer
  "node_id"  A string identifying this node
@@ -61,7 +61,7 @@ starts, telling the node what its ID is, and who the other nodes are. When you r
 
 When initialization is complete, respond with:
 
-```json
+```edn
 {"type"         "raft_init_ok"
  "in_reply_to"  The message ID of the raft_init request}
 ```
@@ -73,7 +73,7 @@ Use errors to inform clients that their request could not be completed
 satisfactorily. You may use additional keys to provide metadata about the
 error.
 
-```json
+```edn
 {"type"        "error"
  "code"        (optional)   An integer identifying the type of error
  "text"        (optional)   A string representation of the error
@@ -83,7 +83,7 @@ error.
 Maelstrom defines the following error codes. You may also define your own,
 above 100.
 
-```json
+```edn
 # Network errors
 0     The request timed out
 1     The node a message was sent to does not exist
@@ -102,7 +102,7 @@ above 100.
 
 Maelstrom will simulate client writes by sending messages like:
 
-```json
+```edn
 {"type"     "write"
  "msg_id"   An integer
  "key"      A string: the key the client would like to write
@@ -112,7 +112,7 @@ Maelstrom will simulate client writes by sending messages like:
 Keys should be created if they do not already exist. Respond to writes by
 returning:
 
-```json
+```edn
 {"type"         "write_ok"
  "in_reply_to"  The msg_id of the write request}
 ```
@@ -122,7 +122,7 @@ returning:
 
 Maelstrom will simulate client reads by sending messages like:
 
-```json
+```edn
 {"type"       "read"
  "msg_id"     An integer
  "key"        A string: the key the client would like to read}
@@ -130,7 +130,7 @@ Maelstrom will simulate client reads by sending messages like:
 
 Respond to reads by returning:
 
-```json
+```edn
 {"type"         "read_ok"
  "in_reply_to"  The msg_id of the read request
  "value"        The string value of the 
@@ -138,7 +138,7 @@ Respond to reads by returning:
 
 If the key does not exist, return
 
-```json
+```edn
 {"type"         "error"
  "in_reply_to"  The msg_id of the request
  "code"         20}
@@ -150,7 +150,7 @@ If the key does not exist, return
 Maelstrom will simulate client compare-and-set operations by sending messages
 like:
 
-```json
+```edn
 {"type"     "cas"
  "msg_id"   An integer
  "key"      A string: the key the client would like to write
@@ -160,14 +160,14 @@ like:
 
 If the current value of the given key is `from`, set the key's value to `to`, and return:
 
-```json
+```edn
 {"type"         "cas_ok"
  "in_reply_to"  The msg_id of the request}
 ```
 
 If the key does not exist, return
 
-```json
+```edn
 {"type"         "error"
  "in_reply_to"  The msg_id of the request
  "code"         20}
@@ -175,7 +175,7 @@ If the key does not exist, return
 
 If the current value is *not* `from`, return
 
-```json
+```edn
 {"type"         "error"
  "in_reply_to"  The msg_id of the request
  "code"         22}
@@ -186,7 +186,7 @@ If the current value is *not* `from`, return
 
 Maelstrom will simulate client deletes by sending messages like:
 
-```json
+```edn
 {"type"       "delete"
  "msg_id"     An integer
  "key"        A string: the key to delete}
@@ -194,14 +194,14 @@ Maelstrom will simulate client deletes by sending messages like:
 
 Delete the key from your table, and return:
 
-```json
+```edn
 {"type"         "delete_ok"
  "in_reply_to"  The msg_id of the request}
 ```
 
 If the key does not exist, return:
 
-```json
+```edn
 {"type"         "error"
  "in_reply_to"  The msg_id of the request
  "code"         20}
