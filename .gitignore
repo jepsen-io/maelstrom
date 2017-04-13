@@ -4,6 +4,9 @@
 store/
 pom.xml
 pom.xml.asc
+*.log
+.*.swp
+~.*
 *.jar
 *.class
 /.lein-*
