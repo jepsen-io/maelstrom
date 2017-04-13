@@ -133,7 +133,7 @@ Respond to reads by returning:
 ```edn
 {"type"         "read_ok"
  "in_reply_to"  The msg_id of the read request
- "value"        The string value of the 
+ "value"        The string value for that key
 ```
 
 If the key does not exist, return

@@ -21,7 +21,6 @@
     (with-thread-name (str "node " node-id)
       (with-open [log log-writer]
         (doseq [line (bs/to-line-seq (.getErrorStream p))]
-          (info line)
           (.write log line)
           (.write log "\n")
           (.flush log)))
@@ -35,9 +34,7 @@
     (with-thread-name (str "node " node-id)
       (doseq [line (bs/to-line-seq (.getInputStream p))]
         (try
-          (info "Got" line)
           (let [parsed (json/parse-string line true)]
-            (info :out parsed)
             (net/send! net parsed))
           (catch Throwable e
             (warn e "error processing stdout:\n" line))))
@@ -53,7 +50,6 @@
         (while (deref running?)
           (try
             (when-let [msg (net/recv! net node-id 1000)]
-              (info "Passing on" msg)
               (json/generate-stream msg w)
               (.write w "\n")
               (.flush w))

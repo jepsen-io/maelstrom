@@ -1,3 +1,0 @@
-Online
-Received {:dest=>"b", :body=>{:type=>"raft_init", :node_id=>"b", :node_ids=>["a", "b", "c"], :msg_id=>1}, :src=>"c1"}
-Raft init!

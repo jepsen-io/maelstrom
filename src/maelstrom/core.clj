@@ -4,6 +4,7 @@
   (:require [clojure.tools.logging :refer [info warn]]
             [maelstrom [net :as net]
                        [process :as process]]
+            [knossos.model :as model]
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [client :as client]
@@ -61,6 +62,64 @@
           (process/stop-node! p)
           (swap! processes dissoc node))))))
 
+(defn error
+  "Takes an invocation operation and a response message for a client request.
+  If the response is an error, constructs an appropriate error operation.
+  Otherwise, returns nil."
+  [op msg]
+  (let [body (:body msg)]
+    (when (= "error" (:type body))
+      (assoc op :type :info, :error (:text body)))))
+
+(def client-timeout 1000)
+
+(defn client
+  "Construct a client for the given network"
+  ([net]
+   (client net nil nil))
+  ([net conn node]
+   (reify client/Client
+     (setup! [this test node]
+       (client net (net/sync-client! net) node))
+
+     (invoke! [_ test op]
+       (let [[k v] (:value op)]
+         (case (:f op)
+           :read (let [res (net/sync-client-send-recv!
+                             conn
+                             {:dest node
+                              :body {:type "read", :key  k}}
+                             client-timeout)
+                       v (:value (:body res))]
+                   (or (error op res)
+                       (assoc op
+                              :type :ok
+                              :value (independent/tuple k v))))
+
+           :write (let [res (net/sync-client-send-recv!
+                              conn
+                              {:dest node
+                               :body {:type "write", :key k, :value v}}
+                              client-timeout)]
+                    (or (error op res)
+                        (assoc op :type :ok)))
+
+           :cas (let [[v v'] v
+                      res (net/sync-client-send-recv!
+                            conn
+                            {:dest node
+                             :body {:type "cas", :key k, :from v, :to v'}}
+                            client-timeout)]
+                  (or (error op res)
+                      (assoc op :type :ok))))))
+
+     (teardown! [_ test]
+       (net/sync-client-close! conn)))))
+
+(defn r   [_ _] {:type :invoke, :f :read, :value nil})
+(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 5)})
+(defn cas [_ _] {:type :invoke, :f :cas, :value [(rand-int 5) (rand-int 5)]})
+
 (defn test
   "Construct a Jepsen test. Options:
 
@@ -75,7 +134,27 @@
             :db   (db {:net net
                        :bin "demo.rb"
                        :args ["hi"]})
-            :nodes ["a" "b" "c"]})))
+            :client (client net)
+            :nodes ["a" "b" "c"]
+            :model  (model/cas-register)
+            :checker (checker/compose
+                       {:perf     (checker/perf)
+                        :timeline (independent/checker (timeline/html))
+                        :linear   (independent/checker checker/linearizable)})
+            :generator (->> (independent/concurrent-generator
+                              5
+                              (range)
+                              (fn [k]
+                                (->> (gen/mix [r w cas])
+                                     (gen/stagger 1)
+                                     (gen/limit 100))))
+                            (gen/nemesis
+                              (gen/seq (cycle [(gen/sleep 5)
+                                               {:type :info, :f :start}
+                                               (gen/sleep 5)
+                                               {:type :info, :f :stop}])))
+                            (gen/time-limit (:time-limit opts)))})))
+
 
 (defn -main
   [& args]

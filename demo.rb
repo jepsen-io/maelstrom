@@ -3,9 +3,12 @@
 require 'json'
 
 class RaftNode
-  @node_id     = nil
-  @node_ids    = nil
-  @next_msg_id = 0
+  def initialize
+    @node_id     = nil
+    @node_ids    = nil
+    @next_msg_id = 0
+    @kv          = {}
+  end
 
   # Generate a fresh message id
   def new_msg_id
@@ -41,6 +44,28 @@ class RaftNode
         @node_ids = body[:node_ids]
         STDERR.puts "Raft init!"
         reply! msg, {type: "raft_init_ok"}
+
+      when "write"
+        @kv[body[:key]] = body[:value]
+        reply! msg, {type: "write_ok"}
+
+      when "read"
+        reply! msg, {type: "read_ok", value: @kv[body[:key]]}
+
+      when "cas"
+        k = body[:key]
+        if not (@kv.include? k)
+          reply! msg, {type: "error",
+                       code: 20,
+                       text: "not found"}
+        elsif @kv[k] != body[:from]
+          reply! msg, {type: "error",
+                       code: 22,
+                       text: "expected #{body[:from]}, had #{@kv[k]}"}
+        else
+          @kv[k] = body[:to]
+          reply! msg, {type: "cas_ok"}
+        end
       end
     end
   end

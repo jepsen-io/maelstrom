@@ -66,7 +66,7 @@
   both node IDs. Mutates and returns the network."
   [net message]
   (validate-msg net message)
-  (info :send (pr-str message))
+  ; (info :send (pr-str message))
   (if (< (rand) (:p-loss @net))
     net ; whoops, lost ur packet
     (let [src  (:src message)
@@ -80,7 +80,7 @@
   network. Returns `nil` if no message available in timeout-ms milliseconds."
   [net node timeout-ms]
   (let [msg (.poll (queue-for net node) timeout-ms TimeUnit/MILLISECONDS)]
-    (info :recv (pr-str msg))
+    ; (info :recv (pr-str msg))
     msg))
 
 
@@ -129,7 +129,7 @@
     (assert target-msg-id "This client isn't waiting for any response!")
     (try
       (loop []
-        (info "Waiting for message" (pr-str target-msg-id) "for" node-id)
+        ; (info "Waiting for message" (pr-str target-msg-id) "for" node-id)
         (let [timeout (/ (- deadline (System/nanoTime)) 1e6)
               msg     (recv! net node-id timeout)]
           (cond ; Nothing in queue
