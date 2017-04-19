@@ -85,15 +85,17 @@ class Client
     @handlers[type] = handler
   end
 
-  # Send a body to the given node id
-  def send!(dest, body)
-    @logger << "Sent #{{dest: dest, src: @node_id, body: body}.inspect}"
-    JSON.dump({dest: dest,
-               src:  @node_id,
-               body: body},
-               STDOUT)
+  # Sends a raw message
+  def send_msg!(msg)
+    @logger << "Sent #{msg.inspect}"
+    JSON.dump msg, STDOUT
     STDOUT << "\n"
     STDOUT.flush
+  end
+
+  # Send a body to the given node id. Fills in src with our own node_id.
+  def send!(dest, body)
+    send_msg!({dest: dest, src: @node_id, body: body})
   end
 
   # Reply to a request with a response body
@@ -154,7 +156,6 @@ class KVStore
 
   # Apply op to state machine and generate a response message
   def apply!(op)
-    @logger << "Applying #{op}"
     res = nil
     k = op[:key]
     case op[:type]
@@ -204,6 +205,8 @@ class RaftNode
 
     @commit_index = 0
     @last_applied = 1
+
+    @leader = nil
 
     @client = Client.new @logger
     @state_machine = KVStore.new @logger
@@ -274,6 +277,7 @@ class RaftNode
   def become_follower!
     @logger << "Became follower for term #{@current_term}"
     @state = :follower
+    @leader = nil
     @next_index = nil
     @match_index = nil
   end
@@ -282,6 +286,7 @@ class RaftNode
     @state = :candidate
     advance_term! @current_term + 1
     @voted_for = @node_id
+    @leader = nil
     @logger << "Became candidate for term #{@current_term}"
     reset_election_deadline!
     request_votes!
@@ -291,6 +296,7 @@ class RaftNode
     raise "Should be a candidate" unless @state == :candidate
     @logger << "Became leader for term #{@current_term}"
     @state = :leader
+    @leader = nil
     @next_index = Hash[other_nodes.zip([@log.size + 1] * other_nodes.size)]
     @match_index = Hash[other_nodes.zip([0] * other_nodes.size)]
   end
@@ -298,12 +304,10 @@ class RaftNode
   ## Rules for all servers ##################################################
 
   def advance_state_machine!
-    @logger << "advance_state_machine!"
     if @last_applied < @commit_index
       @last_applied += 1
       res = @state_machine.apply! @log[@last_applied][:op]
       if @state == :leader
-        @logger << "KV response: #{res.inspect}"
         @client.send! res[:dest], res[:body]
       end
       true
@@ -321,7 +325,6 @@ class RaftNode
   ## Rules for leaders ######################################################
 
   def replicate_log!(force)
-    @logger << "replicate_log!"
     if @state == :leader and @heartbeat_deadline <= Time.now
       @logger << "time to replicate"
       other_nodes.each do |node|
@@ -355,7 +358,6 @@ class RaftNode
   end
 
   def leader_advance_commit_index!
-    @logger << "leader_advance_commit_index!"
     if @state == :leader
       n = median match_index.values
       if @commit_index < n and @log[n][:term] == @current_term
@@ -397,7 +399,6 @@ class RaftNode
   end
 
   def election!
-    @logger << "election!"
     dt = (@election_deadline - Time.now)
     if (dt <= 0)
       if (@state == :follower or @state == :candidate)
@@ -418,6 +419,11 @@ class RaftNode
     if @state == :leader
       body[:client] = msg[:src]
       @log << {term: @current_term, op: body}
+    elsif @leader
+      # Proxy to current leader
+      @logger << "Proxying to #{@leader}"
+      msg[:dest] = @leader
+      @client.send_msg! msg
     else
       @client.reply! msg, {type: "error", code: 11, text: "not a leader"}
     end
@@ -463,10 +469,16 @@ class RaftNode
 
       ok  = {type: "append_entries_res", term: @current_term, success: true}
       err = {type: "append_entries_res", term: @current_term, success: false}
+
       if body[:term] < @current_term
         # Leader is behind us
         @client.reply! msg, err
-      elsif 0 < body[:prev_log_index] and e = @log[body[:prev_log_index]] and (e.nil? or e[:term] != body[:prev_log_term])
+        break
+      end
+
+      @leader = body[:leader_id]
+
+      if 0 < body[:prev_log_index] and e = @log[body[:prev_log_index]] and (e.nil? or e[:term] != body[:prev_log_term])
         # We disagree on the previous log term
         @client.reply! msg, err
       else
@@ -493,7 +505,6 @@ class RaftNode
     @logger << "Online"
     while true
       begin
-        @logger << "Loop"
         @client.process_msg! or
           replicate_log! false or
           election! or
