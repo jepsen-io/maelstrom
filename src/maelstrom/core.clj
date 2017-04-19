@@ -132,7 +132,8 @@
       :bin      Path to a binary to run
       :args     Arguments to that binary"
   [opts]
-  (let [net (net/net)]
+  (let [net   (net/net)
+        nodes (:nodes opts)]
     (merge tests/noop-test
            opts
            {:name "maelstrom"
@@ -141,14 +142,14 @@
                        :bin "demo.rb"
                        :args ["hi"]})
             :client (client net)
-            :nodes ["a" "b" "c"]
+            :nodes  nodes
             :model  (model/cas-register)
             :checker (checker/compose
                        {:perf     (checker/perf)
                         :timeline (independent/checker (timeline/html))
                         :linear   (independent/checker checker/linearizable)})
             :generator (->> (independent/concurrent-generator
-                              5
+                              (count nodes)
                               (range)
                               (fn [k]
                                 (->> (gen/mix [r w cas])

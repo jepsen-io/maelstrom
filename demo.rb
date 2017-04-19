@@ -190,8 +190,10 @@ end
 class RaftNode
   def initialize
     @election_timeout = 2.0
+    @heartbeat_interval = 1.0
+    @min_replication_interval = 0.05
     @election_deadline = Time.at 0
-    @heartbeat_deadline = Time.at 0
+    @last_replication = Time.at 0
 
     @logger = Logger.new
 
@@ -254,15 +256,8 @@ class RaftNode
     end
   end
 
-
-  ## Basic transitions #######################################################
-
   def reset_election_deadline!
     @election_deadline = Time.now + (@election_timeout * (rand + 1))
-  end
-
-  def reset_heartbeat_deadline!
-    @heartbeat_deadline = Time.now + (@election_timeout / 2.0)
   end
 
   def advance_term!(term)
@@ -271,6 +266,40 @@ class RaftNode
     @voted_for = nil
   end
 
+  def maybe_step_down!(remote_term)
+    if @current_term < remote_term
+      advance_term! remote_term
+      become_follower!
+    end
+  end
+
+  def request_votes!
+    votes = Set.new([@node_id])
+
+    brpc!(
+      type:            "request_vote",
+      term:            @current_term,
+      candidate_id:    @node_id,
+      last_log_index:  @log.size,
+      last_log_term:   @log.last_term
+    ) do |response|
+      body = response[:body]
+      case body[:type]
+      when "request_vote_res"
+        maybe_step_down! body[:term]
+        if @state == :candidate and body[:vote_granted] and body[:term] == @current_term
+          # Got a vote for our candidacy
+          votes << response[:src]
+          if majority(@node_ids.size) <= votes.size
+            # We have a majority of votes for this term
+            become_leader!
+          end
+        end
+      else
+        raise "Unknown response message: #{response.inspect}"
+      end
+    end
+  end
 
   ## Transitions between roles ###############################################
 
@@ -301,6 +330,7 @@ class RaftNode
     @match_index = Hash[other_nodes.zip([0] * other_nodes.size)]
   end
 
+
   ## Rules for all servers ##################################################
 
   def advance_state_machine!
@@ -314,46 +344,41 @@ class RaftNode
     end
   end
 
-  def maybe_step_down!(remote_term)
-    if @current_term < remote_term
-      advance_term! remote_term
-      become_follower!
-    end
-  end
-
 
   ## Rules for leaders ######################################################
 
   def replicate_log!(force)
-    if @state == :leader and @heartbeat_deadline <= Time.now
-      @logger << "time to replicate"
+    if @state == :leader and @min_replication_interval < (Time.now - @last_replication)
       other_nodes.each do |node|
         ni = @next_index[node]
         entries = @log.from ni
-        @logger << "replicating #{ni}+: #{entries.inspect}"
-        @client.rpc!(
-          node,
-          type:            "append_entries",
-          term:            @current_term,
-          leader_id:       @node_id,
-          prev_log_index:  ni - 1,
-          prev_log_term:   @log[ni - 1][:term],
-          entries:         entries,
-          leader_commit:   @commit_index
-        ) do |res|
-          body = res[:body]
-          if body[:success]
-            @next_index[node] =
-              [@next_index[node], ni + entries.size].max
-            @match_index[node] =
-              [@match_index[node], ni - 1 + entries.size].max
-          else
-            @next_index[node] -= 1
+        if 0 < entries.size or @heartbeat_interval < (Time.now - @last_replication)
+          @last_replication = Time.now
+
+          @logger << "replicating #{ni}+: #{entries.inspect}"
+          @client.rpc!(
+            node,
+            type:            "append_entries",
+            term:            @current_term,
+            leader_id:       @node_id,
+            prev_log_index:  ni - 1,
+            prev_log_term:   @log[ni - 1][:term],
+            entries:         entries,
+            leader_commit:   @commit_index
+          ) do |res|
+            body = res[:body]
+            if body[:success]
+              @next_index[node] =
+                [@next_index[node], ni + entries.size].max
+              @match_index[node] =
+                [@match_index[node], ni - 1 + entries.size].max
+            else
+              @next_index[node] -= 1
+            end
           end
+          true
         end
       end
-      reset_heartbeat_deadline!
-      true
     end
   end
 
@@ -370,37 +395,9 @@ class RaftNode
 
   ## Leader election ########################################################
 
-  def request_votes!
-    votes = Set.new([@node_id])
-
-    brpc!(
-      type:            "request_vote",
-      term:            @current_term,
-      candidate_id:    @node_id,
-      last_log_index:  @log.size,
-      last_log_term:   @log.last_term
-    ) do |response|
-      body = response[:body]
-      case body[:type]
-      when "request_vote_res"
-        maybe_step_down! body[:term]
-        if @state == :candidate and body[:vote_granted] and body[:term] == @current_term
-          # Got a vote for our candidacy
-          votes << response[:src]
-          if majority(@node_ids.size) <= votes.size
-            # We have a majority of votes for this term
-            become_leader!
-          end
-        end
-      else
-        raise "Unknown response message: #{response.inspect}"
-      end
-    end
-  end
 
   def election!
-    dt = (@election_deadline - Time.now)
-    if (dt <= 0)
+    if @election_deadline < Time.now
       if (@state == :follower or @state == :candidate)
         # Time for an election!
         become_candidate!
@@ -510,7 +507,7 @@ class RaftNode
           election! or
           leader_advance_commit_index! or
           advance_state_machine! or
-          sleep 0.1
+          sleep 0.001
       rescue StandardError => e
         @logger << "Caught #{e}:\n#{e.backtrace.join "\n"}"
       end
