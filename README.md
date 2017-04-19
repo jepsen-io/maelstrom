@@ -90,7 +90,7 @@ above 100.
 
 # Generic errors
 10    The given operation is not supported
-11    This node cannot execute this operation now, but might be able to later
+11    This node is temporarily unable to serve this type of request
 
 # Key-value errors
 20   The given key does not exist
@@ -98,6 +98,13 @@ above 100.
 22   A precondition (e.g. a compare-and-set comparison) failed
 ```
 
+Codes 1, 10, 11, 20, 21, and 22 are understood to be *definite* failures: they
+indicate the request cannot have, and will never, succeed. Other error codes
+are *indeterminate*: Maelstrom assumes they may or may not succeed.
+
+Use code 10 when developing your server, as a stub to indicate failure. Use
+code 11 for things like requests made to an uninitialized node, or a node which
+is a follower.
 
 ### Writes
 

@@ -55,6 +55,12 @@ class Log
   def truncate(len)
     @entries.slice! len...size
   end
+
+  # Entries from index i onwards
+  def from(i)
+    raise "illegal index #{i}" unless 0 < i
+    @entries.slice(i - 1 .. -1)
+  end
 end
 
 class Client
@@ -185,6 +191,8 @@ end
 class RaftNode
   def initialize
     @election_timeout = 2.0
+    @election_deadline = Time.at 0
+    @heartbeat_deadline = Time.at 0
 
     @logger = Logger.new
 
@@ -251,6 +259,10 @@ class RaftNode
 
   def reset_election_deadline!
     @election_deadline = Time.now + (@election_timeout * (rand + 1))
+  end
+
+  def reset_heartbeat_deadline!
+    @heartbeat_deadline = Time.now + (@election_timeout / 2.0)
   end
 
   def advance_term!(term)
@@ -321,14 +333,14 @@ class RaftNode
 
   ## Rules for leaders ######################################################
 
-  def replicate_log!
+  def replicate_log!(force)
     sent = false
     @lock.synchronize do
       if @state == :leader
         other_nodes.each do |node|
           ni = @next_index[node]
-          if ni <= @log.size
-            entries = [@log[ni]]
+          if force or ni <= @log.size
+            entries = @log.from ni
             @client.rpc!(
               node,
               type:            "append_entries",
@@ -351,6 +363,7 @@ class RaftNode
                 end
               end
             end
+            reset_heartbeat_deadline!
             sent = true
           end
         end
@@ -365,9 +378,7 @@ class RaftNode
   def leader_advance_commit_index!
     @lock.synchronize do
       if @state == :leader
-#        @logger << "Match_index: #{match_index.inspect}"
         n = median match_index.values
-#        @logger << "Median is #{n}, commit index: #{@commit_index}, log: #{@log.inspect}"
         if @commit_index < n and @log[n][:term] == @current_term
           @commit_index = n
         end
@@ -397,7 +408,7 @@ class RaftNode
             if @state == :candidate and body[:vote_granted] and body[:term] == @current_term
               # Got a vote for our candidacy
               votes << response[:src]
-              if (@node_ids.size / 2) < votes.size
+              if majority(@node_ids.size) <= votes.size
                 # We have a majority of votes for this term
                 become_leader!
               end
@@ -410,6 +421,19 @@ class RaftNode
     end
   end
 
+
+  def heartbeat!
+    @lock.synchronize do
+      if @state == :leader
+        dt = @heartbeat_deadline - Time.now
+        if (0 < dt)
+          sleep dt
+        else
+          replicate_log! true
+        end
+      end
+    end
+  end
 
   ## Threads ###############################################################
 
@@ -437,44 +461,16 @@ class RaftNode
     end
   end
 
-  # Spawns a thread to periodically send heartbeats to followers
-  def heartbeat_thread!
-    Thread.new do
-      while true
-        begin
-          @lock.synchronize do
-            if @state == :leader
-              brpc!({
-                type:            "append_entries",
-                term:            @current_term,
-                leader_id:       @node_id,
-                prev_log_index:  @log.size,
-                prev_log_term:   @log.last_term,
-                entries:         [],
-                leader_commit:   @commit_index
-              }) do |res|
-              end
-            end
-          end
-          sleep (@election_timeout / 2.0)
-        rescue Exception => e
-          @logger << "Heartbeat thread caught #{e}:\n#{e.backtrace.join "\n"}"
-        end
-      end
-    end
-  end
-
   # Spawns a thread to replicate the leader's log
   def transition_thread!
     Thread.new do
       while true
         begin
-          replicate_log!
-          sleep 0.1
+          replicate_log! false
+          heartbeat!
           leader_advance_commit_index!
-          sleep 0.1
           advance_state_machine!
-          sleep 0.1
+          sleep 0.2
         rescue Exception => e
           @logger << "Caught #{e}:\n#{e.backtrace.join "\n"}"
         end
@@ -575,7 +571,6 @@ class RaftNode
   def start!
     begin
       @client.start!
-      heartbeat_thread!
       transition_thread!
       @logger << "Online"
       while true
