@@ -62,6 +62,9 @@
           (process/stop-node! p)
           (swap! processes dissoc node))))))
 
+(def known-failure-codes
+  #{1 10 11 20 21 22})
+
 (defn error
   "Takes an invocation operation and a response message for a client request.
   If the response is an error, constructs an appropriate error operation.
@@ -69,9 +72,12 @@
   [op msg]
   (let [body (:body msg)]
     (when (= "error" (:type body))
-      (assoc op :type :info, :error (:text body)))))
+      (let [type (if (known-failure-codes (:code body))
+                   :fail
+                   :info)]
+        (assoc op :type type, :error [(:code body) (:text body)])))))
 
-(def client-timeout 1000)
+(def client-timeout 5000)
 
 (defn client
   "Construct a client for the given network"
@@ -146,7 +152,7 @@
                               (range)
                               (fn [k]
                                 (->> (gen/mix [r w cas])
-                                     (gen/stagger 1)
+                                     (gen/stagger 2)
                                      (gen/limit 100))))
                             (gen/nemesis
                               (gen/seq (cycle [(gen/sleep 5)

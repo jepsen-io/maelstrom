@@ -21,6 +21,7 @@
     (with-thread-name (str "node " node-id)
       (with-open [log log-writer]
         (doseq [line (bs/to-line-seq (.getErrorStream p))]
+          (info line)
           (.write log line)
           (.write log "\n")
           (.flush log)))

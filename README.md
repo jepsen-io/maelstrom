@@ -90,6 +90,7 @@ above 100.
 
 # Generic errors
 10    The given operation is not supported
+11    This node cannot execute this operation now, but might be able to later
 
 # Key-value errors
 20   The given key does not exist
