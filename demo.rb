@@ -20,11 +20,6 @@ class Log
     @entries[i-1]
   end
 
-  def <<(entry)
-    @entries << entry
-    @logger << "Log: #{@entries.inspect}"
-  end
-
   def append(entries)
     @entries += entries
     @logger << "Log: #{@entries.inspect}"
@@ -415,7 +410,7 @@ class RaftNode
     body = msg[:body]
     if @state == :leader
       body[:client] = msg[:src]
-      @log << {term: @current_term, op: body}
+      @log.append [{term: @current_term, op: body}]
     elsif @leader
       # Proxy to current leader
       @logger << "Proxying to #{@leader}"
