@@ -37,6 +37,7 @@
                                      :args     (:args opts)
                                      :net      net
                                      :dir      "/tmp"
+                                     :log-stderr? (:log-stderr test)
                                      :log-file (str node-id ".log")}))
 
         (let [client (net/sync-client! net)]
@@ -77,8 +78,6 @@
                    :info)]
         (assoc op :type type, :error [(:code body) (:text body)])))))
 
-(def client-timeout 5000)
-
 (defn client
   "Construct a client for the given network"
   ([net]
@@ -89,7 +88,8 @@
        (client net (net/sync-client! net) node))
 
      (invoke! [_ test op]
-       (let [[k v] (:value op)]
+       (let [[k v]          (:value op)
+             client-timeout (* 10 (:latency test))]
          (case (:f op)
            :read (let [res (net/sync-client-send-recv!
                              conn
@@ -132,7 +132,7 @@
       :bin      Path to a binary to run
       :args     Arguments to that binary"
   [opts]
-  (let [net   (net/net 100)
+  (let [net   (net/net (:latency opts))
         nodes (:nodes opts)]
     (merge tests/noop-test
            opts
@@ -162,9 +162,19 @@
                                                {:type :info, :f :stop}])))
                             (gen/time-limit (:time-limit opts)))})))
 
+(def opt-spec
+  "Extra options for the CLI"
+  [[nil "--log-network"     "Whether to log network packets"
+    :default false]
+   [nil "--log-stderr"      "Whether to log debugging output from nodes"
+    :default false]
+   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
+    :default 1000
+    :parse-fn #(Long/parseLong %)
+    :validate [(complement neg?) "Must be non-negative"]]])
 
 (defn -main
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn test})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn test, :opt-spec opt-spec})
                    (cli/serve-cmd))
             args))

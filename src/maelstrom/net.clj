@@ -9,7 +9,7 @@
   (compare (:deadline a) (:deadline b)))
 
 (defn net
-  "Construct a new network. Takes a characteristic latency in seconds, which is
+  "Construct a new network. Takes a characteristic latency in ms, which is
   the longest packets will ordinarily be delayed.
 
       :queues      A map of receiver node ids to PriorityQueues
@@ -73,7 +73,7 @@
       (let [src  (:src message)
             dest (:dest message)
             q    (queue-for net dest)]
-        (.put q {:deadline (+ (System/nanoTime) (rand-int (* latency 1e9)))
+        (.put q {:deadline (+ (System/nanoTime) (long (rand (* latency 1e6))))
                  :message message})
         net))))
 

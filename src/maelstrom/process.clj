@@ -16,12 +16,12 @@
 
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
-  [^Process p node-id log-writer]
+  [^Process p node-id log-writer log-stderr?]
   (future
     (with-thread-name (str "node " node-id)
       (with-open [log log-writer]
         (doseq [line (bs/to-line-seq (.getErrorStream p))]
-          (info line)
+          (when log-stderr? (info line))
           (.write log line)
           (.write log "\n")
           (.flush log)))
@@ -73,6 +73,7 @@
       :node-id      This node's ID
       :log-file     A string file to receive stderr output
       :net          A network.
+      :log-stderr?  Whether to log stderr output from processes to our logger
 
   Returns:
 
@@ -100,7 +101,7 @@
      :node-id       node-id
      :net           net
      :stdin-thread  (stdin-thread  process node-id net running?)
-     :stderr-thread (stderr-thread process node-id log)
+     :stderr-thread (stderr-thread process node-id log (:log-stderr? opts))
      :stdout-thread (stdout-thread process node-id net)}))
 
 (defn stop-node!
