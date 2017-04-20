@@ -1,7 +1,9 @@
 # Maelstrom
 
 Maelstrom is a toolkit to help in writing toy Raft implementations, as a part
-of a distributed systems workshop by [aphyr](https://jepsen.io/training).
+of a distributed systems workshop by [aphyr](https://jepsen.io/training). I'm
+still putting this class together, and I'm looking for feedback. If you're
+interested, contact [aphyr@jepsen.io](aphyr@jepsen.io).
 
 Maelstrom runs any binary as a Raft node. Nodes read "network" messages from
 STDIN, and write messages to STDOUT. Maelstrom performs initial setup, routes
@@ -13,7 +15,16 @@ are most comfortable with, without having to worry about discovery, network
 communication, daemonization, writing their own distributed test harness, and
 so on.
 
+## Install
+
+You'll need JDK8 or higher. Then [download the Maelstrom
+JAR](https://github.com/jepsen-io/maelstrom/releases/download/0.1.0/maelstrom-0.1.0-standalone.jar), drop it anywhere, and you're good to go.
+
 ## Quickstart
+
+Create a fresh directory to work in; Maelstrom creates some local files. You
+can use a checkout of this repository, or make an empty directory: `mkdir
+my-test`.
 
 An example Ruby implementation is in [demo/ruby.rb](demo/ruby.rb). We can test
 it by running:
