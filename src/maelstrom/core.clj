@@ -36,7 +36,7 @@
                                      :bin      (:bin opts)
                                      :args     (:args opts)
                                      :net      net
-                                     :dir      "/tmp"
+                                     :dir      (System/getProperty "java.io.tmpdir")
                                      :log-stderr? (:log-stderr test)
                                      :log-file (str node-id ".log")}))
 
