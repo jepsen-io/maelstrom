@@ -132,7 +132,7 @@
       :bin      Path to a binary to run
       :args     Arguments to that binary"
   [opts]
-  (let [net   (net/net)
+  (let [net   (net/net 100)
         nodes (:nodes opts)]
     (merge tests/noop-test
            opts

@@ -5,21 +5,21 @@
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
-(defn bozo-compare [a b]
-  (if (< (rand) 0.5)
-    1
-    -1))
+(defn latency-compare [a b]
+  (compare (:deadline a) (:deadline b)))
 
 (defn net
-  "Construct a new network.
+  "Construct a new network. Takes a characteristic latency in seconds, which is
+  the longest packets will ordinarily be delayed.
 
       :queues      A map of receiver node ids to PriorityQueues
       :p-loss      The probability of any given message being lost
       :partitions  A map of receivers to collections of sources. If a
                    source/receiver pair exists, receiver will drop packets
-                   from source."
-  []
+                 from source."
+  [latency]
   (atom {:queues {}
+         :latency latency
          :p-loss 0
          :partitions {}
          :next-client-id 0}))
@@ -30,7 +30,7 @@
   (assert (string? node-id) (str "Node id " (pr-str node-id)
                                  " must be a string"))
   (swap! net assoc-in [:queues node-id]
-         (PriorityBlockingQueue. 11 bozo-compare))
+         (PriorityBlockingQueue. 11 latency-compare))
   net)
 
 (defn remove-node!
@@ -67,22 +67,28 @@
   [net message]
   (validate-msg net message)
   ; (info :send (pr-str message))
-  (if (< (rand) (:p-loss @net))
-    net ; whoops, lost ur packet
-    (let [src  (:src message)
-          dest (:dest message)
-          q    (queue-for net dest)]
-      (.put q message)
-      net)))
+  (let [{:keys [p-loss latency]} @net]
+    (if (< (rand) p-loss)
+      net ; whoops, lost ur packet
+      (let [src  (:src message)
+            dest (:dest message)
+            q    (queue-for net dest)]
+        (.put q {:deadline (+ (System/nanoTime) (rand-int (* latency 1e9)))
+                 :message message})
+        net))))
 
 (defn recv!
   "Receive a message for the given node. Returns the message, and mutates the
   network. Returns `nil` if no message available in timeout-ms milliseconds."
   [net node timeout-ms]
-  (let [msg (.poll (queue-for net node) timeout-ms TimeUnit/MILLISECONDS)]
-    ; (info :recv (pr-str msg))
-    msg))
-
+  (when-let [envelope (.poll (queue-for net node)
+                             timeout-ms TimeUnit/MILLISECONDS)]
+    (let [{:keys [deadline message]} envelope
+          dt (/ (- deadline (System/nanoTime)) 1e6)]
+      (when (pos? dt)
+        (Thread/sleep dt))
+      ; (info :recv (pr-str msg))
+      message)))
 
 ;; Client ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
