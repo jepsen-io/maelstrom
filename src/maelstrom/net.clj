@@ -17,8 +17,10 @@
       :partitions  A map of receivers to collections of sources. If a
                    source/receiver pair exists, receiver will drop packets
                  from source."
-  [latency]
+  [latency log-send? log-recv?]
   (atom {:queues {}
+         :log-send? log-send?
+         :log-recv? log-recv?
          :latency latency
          :p-loss 0
          :partitions {}
@@ -66,8 +68,8 @@
   both node IDs. Mutates and returns the network."
   [net message]
   (validate-msg net message)
-  ; (info :send (pr-str message))
-  (let [{:keys [p-loss latency]} @net]
+  (let [{:keys [log-send? p-loss latency]} @net]
+    (when log-send? (info :send (pr-str message)))
     (if (< (rand) p-loss)
       net ; whoops, lost ur packet
       (let [src  (:src message)
@@ -87,7 +89,8 @@
           dt (/ (- deadline (System/nanoTime)) 1e6)]
       (when (pos? dt)
         (Thread/sleep dt))
-      ; (info :recv (pr-str msg))
+      (when (:log-recv? @net)
+        (info :recv (pr-str message)))
       message)))
 
 ;; Client ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

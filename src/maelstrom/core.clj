@@ -132,7 +132,9 @@
       :bin      Path to a binary to run
       :args     Arguments to that binary"
   [opts]
-  (let [net   (net/net (:latency opts))
+  (let [net   (net/net (:latency opts)
+                       (:log-net-send opts)
+                       (:log-net-recv opts))
         nodes (:nodes opts)]
     (merge tests/noop-test
            opts
@@ -164,12 +166,17 @@
 
 (def opt-spec
   "Extra options for the CLI"
-  [[nil "--log-network"     "Whether to log network packets"
+  [[nil "--log-net-send"    "Log packets as they're sent"
     :default false]
+
+   [nil "--log-net-recv"    "Log packets as they're received"
+    :default false]
+
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
     :default false]
+
    [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
-    :default 1000
+    :default 0
     :parse-fn #(Long/parseLong %)
     :validate [(complement neg?) "Must be non-negative"]]])
 
