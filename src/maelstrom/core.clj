@@ -89,7 +89,7 @@
 
      (invoke! [_ test op]
        (let [[k v]          (:value op)
-             client-timeout (* 10 (:latency test))]
+             client-timeout (max (* 10 (:latency test)) 1000)]
          (case (:f op)
            :read (let [res (net/sync-client-send-recv!
                              conn
@@ -138,16 +138,16 @@
         nodes (:nodes opts)]
     (merge tests/noop-test
            opts
-           {:name "maelstrom"
-            :ssh  {:dummy? true}
-            :db   (db {:net net
-                       :bin "demo.rb"
-                       :args ["hi"]})
+           {:name    "maelstrom"
+            :ssh     {:dummy? true}
+            :db      (db {:net net
+                          :bin (:bin opts)
+                          :args []})
             :client  (client net)
             :nemesis (nemesis/partition-random-halves)
-            :nodes  nodes
-            :net    (net/jepsen-adapter net)
-            :model  (model/cas-register)
+            :nodes   nodes
+            :net     (net/jepsen-adapter net)
+            :model   (model/cas-register)
             :checker (checker/compose
                        {:perf     (checker/perf)
                         :timeline (independent/checker (timeline/html))
@@ -157,18 +157,25 @@
                               (range)
                               (fn [k]
                                 (->> (gen/mix [r w cas])
-                                     (gen/stagger 2)
+                                     (gen/stagger (/ (:rate opts)))
                                      (gen/limit 100))))
                             (gen/nemesis
-                              (gen/seq (cycle [(gen/sleep 5)
+                              (gen/seq (cycle [(gen/sleep 10)
                                                {:type :info, :f :start}
-                                               (gen/sleep 5)
+                                               (gen/sleep 10)
                                                {:type :info, :f :stop}])))
                             (gen/time-limit (:time-limit opts)))})))
 
 (def opt-spec
   "Extra options for the CLI"
-  [[nil "--log-net-send"    "Log packets as they're sent"
+  [[nil "--bin FILE"        "Path to binary which runs a node"]
+
+   [nil "--rate RATE" "Approximate number of request/sec/client"
+    :default  1
+    :parse-fn #(Double/parseDouble %)
+    :validate [pos? "Must be positive"]]
+
+   [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
 
    [nil "--log-net-recv"    "Log packets as they're received"
@@ -182,8 +189,17 @@
     :parse-fn #(Long/parseLong %)
     :validate [(complement neg?) "Must be non-negative"]]])
 
+(defn opt-fn
+  "Options validation"
+  [parsed]
+  (if-not (:bin (:options parsed))
+    (update parsed :errors conj "Expected a --bin BINARY to test")
+    parsed))
+
 (defn -main
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn test, :opt-spec opt-spec})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn test
+                                         :opt-spec opt-spec
+                                         :opt-fn opt-fn})
                    (cli/serve-cmd))
             args))

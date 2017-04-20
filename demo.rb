@@ -362,13 +362,17 @@ class RaftNode
             leader_commit:   @commit_index
           ) do |res|
             body = res[:body]
-            if body[:success]
-              @next_index[node] =
-                [@next_index[node], ni + entries.size].max
-              @match_index[node] =
-                [@match_index[node], ni - 1 + entries.size].max
-            else
-              @next_index[node] -= 1
+            maybe_step_down! body[:term]
+
+            if @state == :leader
+              if body[:success]
+                @next_index[node] =
+                  [@next_index[node], ni + entries.size].max
+                @match_index[node] =
+                  [@match_index[node], ni - 1 + entries.size].max
+              else
+                @next_index[node] -= 1
+              end
             end
           end
           true
