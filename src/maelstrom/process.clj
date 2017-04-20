@@ -37,6 +37,7 @@
         (try
           (let [parsed (json/parse-string line true)]
             (net/send! net parsed))
+          (catch java.io.IOException e)
           (catch Throwable e
             (warn e "error processing stdout:\n" line))))
       :stdout-done)))
@@ -47,15 +48,20 @@
   [^Process p node-id net running?]
   (future
     (with-thread-name (str "node " node-id)
-      (with-open [w (OutputStreamWriter. (.getOutputStream p))]
-        (while (deref running?)
-          (try
-            (when-let [msg (net/recv! net node-id 1000)]
-              (json/generate-stream msg w)
-              (.write w "\n")
-              (.flush w))
-            (catch Throwable e
-              (warn e "error processing stdin")))))
+      (try
+        (with-open [w (OutputStreamWriter. (.getOutputStream p))]
+          (while (deref running?)
+            (try
+              (when-let [msg (net/recv! net node-id 1000)]
+                (json/generate-stream msg w)
+                (.write w "\n")
+                (.flush w))
+              (catch java.io.IOException e)
+              (catch Throwable e
+                (warn e "error processing stdin")))))
+        ; When we try to close the OutputStreamWriter, it'll try to write
+        ; to its underlying stream and throw *again*
+        (catch java.io.IOException e))
       :stdin-done)))
 
 (defn start-node!
