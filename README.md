@@ -4,7 +4,7 @@ Maelstrom is a toolkit to help in writing toy Raft implementations, as a part
 of a distributed systems workshop by [aphyr](https://jepsen.io/training). I'm
 still putting this class together, and I'm looking for feedback. If you have
 comments, or would like me to teach this class at your organization, contact
-[aphyr@jepsen.io](aphyr@jepsen.io).
+[aphyr@jepsen.io](mailto:aphyr@jepsen.io).
 
 Maelstrom runs any binary as a Raft node. Nodes read "network" messages from
 STDIN, and write messages to STDOUT. Maelstrom performs initial setup, routes
