@@ -13,6 +13,70 @@ are most comfortable with, without having to worry about discovery, network
 communication, daemonization, writing their own distributed test harness, and
 so on.
 
+## Quickstart
+
+An example Ruby implementation is in [demo/ruby.rb](demo/ruby.rb). We can test
+it by running:
+
+```sh
+$ java -jar maelstrom.jar test --bin demo/ruby.rb
+...
+Everything looks good! ヽ(‘ー`)ノ
+```
+
+Maelstrom starts five copies of `ruby.rb`, connects them via its simulated
+network, constructs five clients to perform reads, writes, and compare-and-set
+operations against the server, simulates randomized network partitions, and
+finally, verifies whether the resulting history was linearizable.
+
+Logs from each node are available in the local directory: `n1.log`, `n2.log`,
+etc. Detailed results of the test are available in `store/latest/`:
+
+- jepsen.log: The full log from the Maelstrom run
+- history.txt: The logical history of the system, as seen by clients
+- results.edn: Analysis results
+- latency-raw.png: Raw operation latencies during the test. Grey regions
+  indicate network partitions.
+
+More detailed results for each key in the key-value store are available in
+`store/latest/independent/<key>/`:
+
+- results.edn: Results for that key in particular
+- history.txt: The history of operations on that key
+- timeline.html: HTML visualization of the history for that key
+- linear.svg: interactive visualization of nonlinearizable anomalies, if found
+
+You can launch a web server for browsing these results:
+
+```sh
+java -jar maelstrom.jar serve
+22:41:00.605 [main] INFO  jepsen.web - Web server running.
+22:41:00.608 [main] INFO  jepsen.cli - Listening on http://0.0.0.0:8080/
+```
+
+## Controlling tests
+
+A full list of options is available by running `java -jar maelstrom.jar test
+--help`. The important ones are:
+
+- `--node NODE-NAME`: Specify node names by hand
+
+To get more information, use:
+
+- `--log-stderr`: Show STDERR output from each node in the Maelstrom log
+- `--log-net-send`: Log messages as they are sent into the network
+- `--log-net-recv`: Log messages as they are received by nodes
+
+To make tests more or less aggressive, use:
+
+- `--concurrency INT`: Number of clients to run concurrently
+- `--rate FLOAT`: Approximate number of requests per second per client
+- `--time-limit SECONDS`: How long to run tests for
+- `--latency MILLIS`: Approximate simulated network latency, during normal
+  operations.
+
+SSH options are unused; Maelstrom runs entirely on the local node.
+
 ## Protocol
 
 Maelstrom nodes receive messages on STDIN, send messages on STDOUT, and log
