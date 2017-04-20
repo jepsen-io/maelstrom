@@ -143,8 +143,10 @@
             :db   (db {:net net
                        :bin "demo.rb"
                        :args ["hi"]})
-            :client (client net)
+            :client  (client net)
+            :nemesis (nemesis/partition-random-halves)
             :nodes  nodes
+            :net    (net/jepsen-adapter net)
             :model  (model/cas-register)
             :checker (checker/compose
                        {:perf     (checker/perf)

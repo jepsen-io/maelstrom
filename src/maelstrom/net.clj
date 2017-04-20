@@ -1,7 +1,8 @@
 (ns maelstrom.net
   "A simulated, mutable unordered network, supporting randomized delivery,
   selective packet loss, and long-lasting partitions."
-  (:require [clojure.tools.logging :refer [info warn]])
+  (:require [clojure.tools.logging :refer [info warn]]
+            [jepsen.net :as net])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
@@ -16,7 +17,7 @@
       :p-loss      The probability of any given message being lost
       :partitions  A map of receivers to collections of sources. If a
                    source/receiver pair exists, receiver will drop packets
-                 from source."
+                   from source."
   [latency log-send? log-recv?]
   (atom {:queues {}
          :log-send? log-send?
@@ -25,6 +26,25 @@
          :p-loss 0
          :partitions {}
          :next-client-id 0}))
+
+(defn jepsen-adapter
+  "A jepsen.net/Net which controls this network."
+  [net]
+  (reify net/Net
+    (drop! [_ test src dest]
+      (swap! net update-in [:partitions dest] conj src))
+
+    (heal! [_ test]
+      (swap! net assoc :partitions {}))
+
+    (slow! [_ test]
+      (swap! net update :latency * 10))
+
+    (fast! [_ test]
+      (swap! net update :latency / 10))
+
+    (flaky! [_ test]
+      (swap! net update :p-loss 0.5))))
 
 (defn add-node!
   "Adds a node to the network."
@@ -86,12 +106,13 @@
   (when-let [envelope (.poll (queue-for net node)
                              timeout-ms TimeUnit/MILLISECONDS)]
     (let [{:keys [deadline message]} envelope
-          dt (/ (- deadline (System/nanoTime)) 1e6)]
-      (when (pos? dt)
-        (Thread/sleep dt))
-      (when (:log-recv? @net)
-        (info :recv (pr-str message)))
-      message)))
+          dt (/ (- deadline (System/nanoTime)) 1e6)
+          {:keys [log-recv? partitions]} @net]
+      (when-not (some #{(:src message)} (get partitions node))
+        ; No partition
+        (do (when (pos? dt) (Thread/sleep dt))
+            (when log-recv? (info :recv (pr-str message)))
+            message)))))
 
 ;; Client ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
