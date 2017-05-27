@@ -291,6 +291,31 @@ If the key does not exist, return:
  "code"         20}
 ```
 
+## Troubleshooting
+
+### Raft node processes still alive after maelstrom run
+
+You may find that node processes maelstrom starts are not terminating at the end of a run as expected. To address this, make sure that if the process passed as `--bin` forks off a new process, it also handles the process' termination.
+
+
+#### Example
+
+In `bin/raft`
+```sh
+#!/bin/bash
+
+# Forks a new process.
+java -jar target/raft.jar
+```
+
+In `bin/raft`
+```sh
+#!/bin/bash
+
+# Replaces the shell without creating a new process.
+exec java -jar target/raft.jar
+```
+
 ## License
 
 Copyright © 2017 Kyle Kingsbury
