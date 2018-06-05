@@ -124,7 +124,7 @@ class Client
     end
   end
 
-  # Starts a thread to handle incoming messages
+  # Processes a single message from stdin, if one is available.
   def process_msg!
     if line = readline_nonblock
       msg = JSON.parse line, symbolize_names: true
@@ -474,6 +474,8 @@ class RaftNode
 
       @leader = body[:leader_id]
 
+      # TODO: I think there's a bug here; we should assign e before *instead*
+      # of having it in the if.
       if 0 < body[:prev_log_index] and e = @log[body[:prev_log_index]] and (e.nil? or e[:term] != body[:prev_log_term])
         # We disagree on the previous log term
         @client.reply! msg, err
