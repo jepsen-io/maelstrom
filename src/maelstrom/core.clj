@@ -14,6 +14,7 @@
                     [generator :as gen]
                     [independent :as independent]
                     [nemesis :as nemesis]
+                    [store :as store]
                     [tests :as tests]
                     [util :as util :refer [timeout]]]
             [jepsen.checker.timeline :as timeline]
@@ -38,7 +39,9 @@
                                      :net      net
                                      :dir      "/tmp"
                                      :log-stderr? (:log-stderr test)
-                                     :log-file (str node-id ".log")}))
+                                     :log-file (->> (str node-id ".log")
+                                                    (store/path test)
+                                                    .getCanonicalPath)}))
 
         (let [client (net/sync-client! net)]
           (try
