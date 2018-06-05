@@ -87,8 +87,10 @@
    (client net nil nil))
   ([net conn node]
    (reify client/Client
-     (setup! [this test node]
+     (open! [this test node]
        (client net (net/sync-client! net) node))
+
+     (setup! [this test])
 
      (invoke! [_ test op]
        (let [[k v]          (:value op)
@@ -122,7 +124,9 @@
                   (or (error op res)
                       (assoc op :type :ok))))))
 
-     (teardown! [_ test]
+     (teardown! [_ test])
+
+     (close! [_ test]
        (net/sync-client-close! conn)))))
 
 (defn r   [_ _] {:type :invoke, :f :read, :value nil})
@@ -154,7 +158,7 @@
             :checker (checker/compose
                        {:perf     (checker/perf)
                         :timeline (independent/checker (timeline/html))
-                        :linear   (independent/checker checker/linearizable)})
+                        :linear   (independent/checker (checker/linearizable))})
             :generator (->> (independent/concurrent-generator
                               (count nodes)
                               (range)
