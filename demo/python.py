@@ -217,6 +217,7 @@ class RaftNode():
         self.heartbeat_interval = 1     # Time between heartbeats, in seconds
         self.min_replication_interval = 0.05    # Don't replicate too often
         self.election_deadline = 0      # Next election, in epoch seconds
+        self.step_down_deadline = 0     # When to step down automatically
         self.last_replication = 0       # Last replication, in epoch seconds
 
         # Node & cluster ids
@@ -233,9 +234,8 @@ class RaftNode():
 
         # Leader state
         self.next_index = None   # A map of nodes to the next index to replicate
-        self._match_index = None # Map of nodes to their matched log indices
-                                 # Doesn't include ourself; we add that
-                                 # dynamically.
+        self._match_index = None # Map of nodes to the highest log entry known
+                                 # to be replicated on that node.
 
         # Set up network and state machine
         self.log = Log()
@@ -275,6 +275,10 @@ class RaftNode():
         """Oh, our leader is alive, don't start an election for a little while."""
         self.election_deadline = time.time() + (self.election_timeout * (random.random() + 1))
 
+    def reset_step_down_deadline(self):
+        """We got communication, don't step down for a while."""
+        self.step_down_deadline = time.time() + self.election_timeout
+
     def advance_term(self, term):
         """Advance our term to `term`, resetting who we voted for."""
         if not self.current_term < term:
@@ -295,21 +299,24 @@ class RaftNode():
 
         # We vote for ourself
         votes = set([self.node_id])
+        term = self.current_term
 
         def handle(response):
-            log("Vote response:", pformat(response))
+            self.reset_step_down_deadline()
             body = response['body']
-            if body['type'] == "request_vote_res":
-                self.maybe_step_down(body['term'])
-                if self.state == 'candidate' and body['vote_granted'] and body['term'] == self.current_term:
-                    # We have a vote for our candidacy
-                    votes.add(response['src'])
-                    log("Have votes:", pformat(votes))
-                    if majority(len(self.node_ids)) <= len(votes):
-                        # We have a majority of votes for this term
-                        self.become_leader()
-            else:
-                raise RuntimeError('Unknown response message ' + pformat(response))
+            self.maybe_step_down(body['term'])
+            if self.state == 'candidate' and \
+                    self.current_term == term and \
+                    body['term'] == self.current_term and \
+                    body['vote_granted']:
+
+                # We have a vote for our candidacy
+                votes.add(response['src'])
+                log("Have votes:", pformat(votes))
+
+                if majority(len(self.node_ids)) <= len(votes):
+                    # We have a majority of votes for this term
+                    self.become_leader()
 
         # Broadcast vote request
         self.brpc({
@@ -329,6 +336,7 @@ class RaftNode():
         self.leader = None
         self.next_index = None
         self._match_index = None
+        self.reset_election_deadline()
         log("Became follower for term ", self.current_term)
 
     def become_candidate(self):
@@ -349,6 +357,7 @@ class RaftNode():
         log("Became leader for term", self.current_term)
         self.state = 'leader'
         self.leader = None
+        self.last_replication = 0 # Start replicating immediately
         # We'll start by trying to replicate our most recent entry
         self.next_index = {n: self.log.size() + 1 for n in self.other_nodes()}
         self._match_index = {n: 0 for n in self.other_nodes()}
@@ -370,11 +379,22 @@ class RaftNode():
 
     # Actions for leaders
 
+    def step_down_on_timeout(self):
+        """If we haven't received any acks for a while, step down."""
+        if self.state == 'leader' and self.step_down_deadline < time.time():
+            log("Stepping down: haven't received any acks recently")
+            self.become_follower()
+            return True
+
     def replicate_log(self, force):
         """If we're the leader, replicate unacknowledged log entries to followers. Also serves as a heartbeat."""
 
         # How long has it been since we replicated?
         elapsed_time = time.time() - self.last_replication
+        # We'll set this to true if we replicate to anyone
+        replicated = False
+        # We'll need this to make sure we process responses in *this* term
+        term = self.current_term
 
         if self.state == 'leader' and self.min_replication_interval < elapsed_time:
             # We're a leader, and enough time elapsed
@@ -383,13 +403,12 @@ class RaftNode():
                 ni = self.next_index[node]
                 entries = self.log.from_index(ni)
                 if 0 < len(entries) or self.heartbeat_interval < elapsed_time:
-                    self.last_replication = time.time()
-                    log('replicating', ni, 'on:', pformat(entries))
-
+                    log('replicating ' + str(ni) + '+ to', node)
                     def handler(res):
                         body = res['body']
                         self.maybe_step_down(body['term'])
-                        if self.state == 'leader':
+                        if self.state == 'leader' and term == self.current_term:
+                            self.reset_step_down_deadline()
                             if body['success']:
                                 # Record that this follower received the entries
                                 self.next_index[node] = max(self.next_index[node], ni + len(entries))
@@ -407,9 +426,12 @@ class RaftNode():
                         'entries': entries,
                         'leader_commit': self.commit_index
                         }, handler)
+                    replicated = True
 
-                    # We did something!
-                    return True
+        if replicated:
+            # We did something!
+            self.last_replication = time.time()
+            return True
 
     def leader_advance_commit_index(self):
         """If we're the leader, advance our commit index based on what other nodes match us."""
@@ -458,10 +480,21 @@ class RaftNode():
             self.maybe_step_down(body['term'])
             grant = False
             if body['term'] < self.current_term:
-                # This is from an old leader, do nothing
-                pass
-            elif (self.voted_for is None or self.voted_for == body['candidate_id']) and self.log.last_term() <= body['last_log_term'] and self.log.size() <= body['last_log_index']:
-                # Grant vote
+                log('candidate term', body['term'], 'lower than', \
+                        self.current_term, 'not granting vote')
+            elif self.voted_for is not None:
+                log('already voted for', self.voted_for, 'not granting vote')
+            elif body['last_log_term'] < self.log.last_term():
+                log("have log entries from term", self.log.last_term(), \
+                        "which is newer than remote term", \
+                        body['last_log_term'], "not granting vote")
+            elif body['last_log_term'] == self.log.last_term() and \
+                    body['last_log_index'] < self.log.size():
+                log("Our logs are both at term", self.log.last_term(), \
+                        "but our log is", self.log.size(), \
+                        "and theirs is only", body['last_log_index'])
+            else:
+                log("Granting vote to", msg['src'])
                 grant = True
                 self.voted_for = body['candidate_id']
                 self.reset_election_deadline()
@@ -477,7 +510,6 @@ class RaftNode():
         def append_entries(msg):
             body = msg['body']
             self.maybe_step_down(body['term'])
-            self.reset_election_deadline()
 
             res = {'type': 'append_entries_res', 'term': self.current_term}
 
@@ -487,8 +519,10 @@ class RaftNode():
                 self.client.reply(msg, res)
                 return None
 
-            # Remember this leader so we can proxy to them later
+            # This leader is valid; remember them and don't try to run our own
+            # election for a bit
             self.leader = body['leader_id']
+            self.reset_election_deadline()
 
             # Check previous entry to see if it matches
             if 0 < body['prev_log_index']:
@@ -539,6 +573,7 @@ class RaftNode():
         while True:
             try:
                 self.client.process_msg() or \
+                        self.step_down_on_timeout() or \
                         self.replicate_log(False) or \
                         self.election() or \
                         self.leader_advance_commit_index() or \
