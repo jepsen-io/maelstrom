@@ -167,10 +167,11 @@
                                      (gen/stagger (/ (:rate opts)))
                                      (gen/limit 100))))
                             (gen/nemesis
-                              (gen/seq (cycle [(gen/sleep 10)
-                                               {:type :info, :f :start}
-                                               (gen/sleep 10)
-                                               {:type :info, :f :stop}])))
+                              (when-not (:no-partitions opts)
+                                (gen/seq (cycle [(gen/sleep 10)
+                                                 {:type :info, :f :start}
+                                                 (gen/sleep 10)
+                                                 {:type :info, :f :stop}]))))
                             (gen/time-limit (:time-limit opts)))})))
 
 (def opt-spec
@@ -189,6 +190,9 @@
     :default false]
 
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
+    :default false]
+
+   [nil "--no-partitions"   "Let the network run normally"
     :default false]
 
    [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
