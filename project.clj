@@ -5,6 +5,6 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :main maelstrom.core
   :dependencies [[org.clojure/clojure "1.9.0"]
-                 [jepsen "0.1.9"]
+                 [jepsen "0.1.10-SNAPSHOT"]
                  [cheshire "5.7.0"]
                  [byte-streams "0.2.2"]])
