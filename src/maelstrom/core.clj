@@ -159,13 +159,14 @@
                        {:perf     (checker/perf)
                         :timeline (independent/checker (timeline/html))
                         :linear   (independent/checker (checker/linearizable))})
-            :generator (->> (independent/concurrent-generator
-                              (count nodes)
-                              (range)
-                              (fn [k]
-                                (->> (gen/mix [r w cas])
-                                     (gen/stagger (/ (:rate opts)))
-                                     (gen/limit 100))))
+            :generator (->> (when (pos? (:rate opts))
+                              (independent/concurrent-generator
+                                (count nodes)
+                                (range)
+                                (fn [k]
+                                  (->> (gen/mix [r w cas])
+                                       (gen/stagger (/ (:rate opts)))
+                                       (gen/limit 100)))))
                             (gen/nemesis
                               (when-not (:no-partitions opts)
                                 (gen/seq (cycle [(gen/sleep 10)
@@ -181,7 +182,7 @@
    [nil "--rate RATE" "Approximate number of request/sec/client"
     :default  1
     :parse-fn #(Double/parseDouble %)
-    :validate [pos? "Must be positive"]]
+    :validate [(complement neg?) "Can't be negative"]]
 
    [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
