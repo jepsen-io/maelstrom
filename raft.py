@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import unicode_literals
 import datetime
 import json
 import math
@@ -11,6 +12,7 @@ import time
 import traceback
 
 # Utilities
+
 def log(*args):
     """Helper function for logging stuff to stderr"""
     first = True
@@ -126,7 +128,7 @@ class Log():
     def append(self, entries):
         """Appends multiple entries to the log."""
         self.entries.extend(entries)
-        log("Log:\n" + pformat(self.entries))
+        #log("Log:\n" + pformat(self.entries))
 
     def last(self):
         """Returns the most recent entry"""
@@ -155,6 +157,7 @@ class Log():
         return self.entries[i - 1:]
 
 class KVStore():
+    """A state machine providing a key-value store."""
     def __init__(self):
         self.state = {}
 
@@ -203,17 +206,17 @@ class RaftNode():
 
         # Node & cluster IDS
         self.node_id = None     # Our node ID
-        self.node_ids = None    # The set of node IDs
+        self.node_ids = None    # List of all node IDs
 
         # Raft state
         self.state = 'nascent'  # One of nascent, follower, candidate, or leader
         self.current_term = 0   # Our current Raft term
         self.voted_for = None   # What node did we vote for in this term?
         self.commit_index = 0   # The index of the highest committed entry
+        self.last_applied = 1   # The last entry we applied to the state machine
 	self.leader = None	# Who do we think the leader is?
 
 	# Leader state
-	        # Leader state
         self.next_index = None   # A map of nodes to the next index to replicate
         self._match_index = None # Map of nodes to the highest log entry known
                                  # to be replicated on that node.
@@ -237,6 +240,7 @@ class RaftNode():
         return m
 
     def set_node_id(self, id):
+        """Assign our node ID."""
         self.node_id = id
         self.net.set_node_id(id)
 
@@ -275,8 +279,9 @@ class RaftNode():
         votes = set([self.node_id])
         term = self.current_term
 
-        def handler(res):
-            body = res['body']
+        def handle(response):
+            self.reset_step_down_deadline()
+            body = response['body']
             self.maybe_step_down(body['term'])
 
             if self.state == 'candidate' and \
@@ -317,7 +322,8 @@ class RaftNode():
         "Become a candidate"
         self.state = 'candidate'
         self.advance_term(self.current_term + 1)
-	self.leader = None
+        self.voted_for = self.node_id
+        self.leader = None
         self.reset_election_deadline()
         self.reset_step_down_deadline()
         log('Became candidate for term', self.current_term)
@@ -537,11 +543,10 @@ class RaftNode():
 	# Handle client KV requests
 	def kv_req(msg):
             if self.state == 'leader':
+                # Record who we should tell about the completion of this op
                 op = msg['body']
                 op['client'] = msg['src']
                 self.log.append([{'term': self.current_term, 'op': op}])
-                res = self.state_machine.apply(op)
-                self.net.send(res['dest'], res['body'])
 	    elif self.leader:
                 # We're not the leader, but we can proxy to one
                 msg['dest'] = self.leader
@@ -568,6 +573,7 @@ class RaftNode():
 		    self.replicate_log() or \
                     self.election() or \
 		    self.advance_commit_index() or \
+                    self.advance_state_machine() or \
                     time.sleep(0.001)
 
             except KeyboardInterrupt:

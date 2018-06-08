@@ -780,6 +780,21 @@ immediately:
         log('Became leader for term', self.current_term)
 ```
 
+And we'll avoid stepping down shortly after an election:
+
+```py
+    def request_votes(self):
+        """Request that other nodes vote for us as a leader"""
+
+        # We vote for ourself
+        votes = set([self.node_id])
+        term = self.current_term
+
+        def handle(response):
+            self.reset_step_down_deadline()
+						...
+```
+
 Now, we'll have leaders step down once their deadline is up:
 
 ```py

@@ -164,7 +164,7 @@ class Log():
 With the log line commented out, operations go dramatically faster. That'll
 make it easier for us to test.
 
-## Committing Entries
+## Advancing the Commit Index
 
 With our leaders elected, and log replicated, it's time to advance our commit
 index. We can consider any entries that are committed on a majority of nodes committed--that's the median of the matching indices, rounding down.
@@ -176,8 +176,6 @@ def median(xs):
     xs.sort()
     return xs[len(xs) - majority(len(xs))]
 ```
-
-## Advancing the Commit Index
 
 Now we'll add an action to advance the commit index, based on the matching
 index: wherever an index is committed on a majority of servers, and that log
@@ -242,7 +240,26 @@ state machine.
 
 ## Applying Entries
 
-We're going to add a new action for the mainloop--if there are unapplied, committed entries in the log, we can apply one of those entries to the state machine.
+We're going to add a new action for the mainloop--if there are unapplied,
+committed entries in the log, we can apply one of those entries to the state
+machine. First, we'll need a `last_applied` index, which identifies the most
+recently applied entry:
+
+```py
+class RaftNode():
+    def __init__(self):
+				...
+
+        # Raft state
+        self.state = 'nascent'  # One of nascent, follower, candidate, or leader
+        self.current_term = 0   # Our current Raft term
+        self.voted_for = None   # What node did we vote for in this term?
+        self.commit_index = 0   # The index of the highest committed entry
+        self.last_applied = 1   # The last entry we applied to the state machine
+```
+
+Then we'll define an action which advances the state machine to the next
+committed operation.
 
 ```py
 class RaftNode():
@@ -322,3 +339,17 @@ class RaftNode():
 				...
 ```
 
+With these changes in place, you should be able to observe repeated
+linearizable test results.
+
+```
+$ lein run test --bin raft.py --nodes n1,n2,n3 --rate 1 --concurrency 5n --time-limit 60 --test-count 10
+...
+```
+
+Well, *mostly*.
+
+```
+...
+Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
+```
