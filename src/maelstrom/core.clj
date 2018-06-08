@@ -157,8 +157,10 @@
             :model   (model/cas-register)
             :checker (checker/compose
                        {:perf     (checker/perf)
-                        :timeline (independent/checker (timeline/html))
-                        :linear   (independent/checker (checker/linearizable))})
+                        :per-key  (independent/checker
+                                    (checker/compose
+                                      {:timeline (timeline/html)
+                                       :linear   (checker/linearizable)}))})
             :generator (->> (when (pos? (:rate opts))
                               (independent/concurrent-generator
                                 (count nodes)

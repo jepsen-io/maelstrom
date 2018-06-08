@@ -467,7 +467,6 @@ class RaftNode():
             self.set_node_id(body['node_id'])
             self.node_ids = body['node_ids']
 
-            self.reset_election_deadline()
             self.become_follower()
 
             log("Raft init: I am", self.node_id)
