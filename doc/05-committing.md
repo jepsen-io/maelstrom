@@ -347,9 +347,6 @@ $ lein run test --bin raft.py --nodes n1,n2,n3 --rate 1 --concurrency 5n --time-
 ...
 ```
 
-Well, *mostly*.
+Well, probably. There might be hidden bugs here! It's not exactly simple code!
 
-```
-...
-Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
-```
+Best of luck. <3
