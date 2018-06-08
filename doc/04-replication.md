@@ -393,10 +393,10 @@ And register this handler for incoming `append_entries` messages:
         self.net.on('append_entries', append_entries)
 ```
 
-If we try running this, we should be able to see successful append_entries
+If we try running this, we should be able to see successful `append_entries`
 results in the log!
 
-```py
+```
 $ lein run test --bin raft.py --nodes n1,n2,n3 --rate 1 --time-limit 10
 ...
 $ grep -C 6 'append_entries_res' store/latest/n*.log

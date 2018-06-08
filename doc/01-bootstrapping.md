@@ -512,7 +512,7 @@ class RaftNode():
 Nothing fancy here; we've added a setting function for the node id, and updated
 it in both the RaftNode and Net objects. Now, how do we *reply* to our `raft_init` message?
 
-```json
+```
 {u'body': {u'msg_id': 1,
            u'node_id': u'n1',
            u'node_ids': [u'n1'],
