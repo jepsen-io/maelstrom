@@ -239,7 +239,7 @@ $ cat store/latest/n1.log
 Much better. Now we only establish our candidacy every 2+ seconds. Next up,
 we'll add Raft terms and logs to our node.
 
-```Terms
+## Terms
 
 Raft's election system is coupled to the *term*: a monotonicall increasing integer, incremented on each election.
 
