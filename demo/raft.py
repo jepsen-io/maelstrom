@@ -290,7 +290,7 @@ class RaftNode():
                     body['vote_granted']:
 
                 # We have a vote for our candidacy
-                votes.add(res['src'])
+                votes.add(response['src'])
                 log('Have votes:', pformat(votes))
 
                 if majority(len(self.node_ids)) <= len(votes):
@@ -305,7 +305,7 @@ class RaftNode():
             'last_log_index':   self.log.size(),
             'last_log_term':    self.log.last()['term']
             },
-            handler)
+            handle)
 
     # Role transitions
 
