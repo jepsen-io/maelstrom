@@ -36,7 +36,13 @@
       (doseq [line (bs/to-line-seq (.getInputStream p))]
         (try
           (let [parsed (json/parse-string line true)]
-            (net/send! net parsed))
+            (try
+              (net/send! net parsed)
+              (catch java.lang.AssertionError e
+                (when-not (re-find #"Invalid dest" (.getMessage e))
+                  (throw e))
+                (warn "Discarding message for nonexistent node"
+                      (:dest parsed)))))
           (catch java.io.IOException e)
           (catch Throwable e
             (warn e "error processing stdout:\n" line))))
