@@ -70,6 +70,9 @@ leadership. We'll add a commit index, which tracks the highest known committed l
 from spamming the network with messages where we could efficiently batch
 instead.
 
+We'll also add the commit_index, because we want to inform other nodes how far
+we've committed, and advance ours to match the leader.
+
 ```py
 class RaftNode():
     def __init__(self):
@@ -91,7 +94,7 @@ class RaftNode():
         self.voted_for = None   # What node did we vote for in this term?
 
         # Leader state
-                # Leader state
+        self.commit_index = 0    # The highest committed entry in the log
         self.next_index = None   # A map of nodes to the next index to replicate
         self._match_index = None # Map of nodes to the highest log entry known
                                  # to be replicated on that node.
