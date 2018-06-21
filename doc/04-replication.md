@@ -202,18 +202,25 @@ touch with some followers. If the node acknowledges our request, we'll advance
 their next and matching index; otherwise, we'll back up and try again.
 
 ```py
+                    # "closure"
+                    _ni = ni
+                    _entries = list(entries)
+                    _node = node
+
                     def handler(res):
                         body = res['body']
                         self.maybe_step_down(body['term'])
                         if self.state == 'leader' and term == self.current_term:
                             self.reset_step_down_deadline()
                             if body['success']:
-                                # Record that this follower received the entries
-                                self.next_index[node] = max(self.next_index[node], ni + len(entries))
-                                self._match_index[node] = max(self._match_index[node], ni - 1 + len(entries))
+                                self.next_index[_node] = \
+                                        max(self.next_index[_node], _ni + len(_entries))
+                                self._match_index[_node] = \
+                                        max(self._match_index[_node], _ni - 1 + len(_entries))
+                                log("node", _node, "# entries", len(_entries), "ni", ni)
+                                log("next index:", pformat(self.next_index))
                             else:
-                                # Back up
-                                self.next_index[node] -= 1
+                                self.next_index[_node] -= 1
 ```
 
 Then we'll issue the appendEntries request, and remember that we sent at least one message.
