@@ -159,13 +159,13 @@
             :nemesis (nemesis/partition-random-halves)
             :nodes   nodes
             :net     (net/jepsen-adapter net)
-            :model   (model/cas-register)
             :checker (checker/compose
                        {:perf     (checker/perf)
                         :per-key  (independent/checker
                                     (checker/compose
                                       {:timeline (timeline/html)
-                                       :linear   (checker/linearizable)}))})
+                                       :linear   (checker/linearizable
+                                                   {:model (model/cas-register)})}))})
             :generator (->> (when (pos? (:rate opts))
                               (independent/concurrent-generator
                                 (count nodes)
