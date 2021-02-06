@@ -28,6 +28,13 @@ $ lein --version
 Leiningen 2.8.1 on Java 1.8.0_40 Java HotSpot(TM) 64-Bit Server VM
 ```
 
+This isn't required, but to get nice graphs of each test run, you'll want gnuplot installed and on your `$PATH` as `gnuploy` as well.
+
+```
+$ gnuplot --version
+gnuplot 5.0 patchlevel 5
+```
+
 With these preliminaries out of the way, let's start coding!
 
 ## A basic server

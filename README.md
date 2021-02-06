@@ -27,16 +27,16 @@ Create a fresh directory to work in; Maelstrom creates some local files. You
 can use a checkout of this repository, or make an empty directory: `mkdir
 my-test`.
 
-An example Ruby implementation is in [demo/ruby.rb](demo/ruby.rb). We can test
+An example Ruby implementation is in [demo/raft.rb](demo/raft.rb). We can test
 it by running:
 
 ```sh
-$ java -jar maelstrom.jar test --bin demo/ruby.rb
+$ java -jar maelstrom.jar test --bin demo/raft.rb
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```
 
-Maelstrom starts five copies of `ruby.rb`, connects them via its simulated
+Maelstrom starts five copies of `raft.rb`, connects them via its simulated
 network, constructs five clients to perform reads, writes, and compare-and-set
 operations against the server, simulates randomized network partitions, and
 finally, verifies whether the resulting history was linearizable.

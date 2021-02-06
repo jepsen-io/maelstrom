@@ -70,6 +70,9 @@ leadership. We'll add a commit index, which tracks the highest known committed l
 from spamming the network with messages where we could efficiently batch
 instead.
 
+We'll also add the commit_index, because we want to inform other nodes how far
+we've committed, and advance ours to match the leader.
+
 ```py
 class RaftNode():
     def __init__(self):
@@ -91,7 +94,7 @@ class RaftNode():
         self.voted_for = None   # What node did we vote for in this term?
 
         # Leader state
-                # Leader state
+        self.commit_index = 0    # The highest committed entry in the log
         self.next_index = None   # A map of nodes to the next index to replicate
         self._match_index = None # Map of nodes to the highest log entry known
                                  # to be replicated on that node.
@@ -202,18 +205,25 @@ touch with some followers. If the node acknowledges our request, we'll advance
 their next and matching index; otherwise, we'll back up and try again.
 
 ```py
+                    # "closure"
+                    _ni = ni
+                    _entries = list(entries)
+                    _node = node
+
                     def handler(res):
                         body = res['body']
                         self.maybe_step_down(body['term'])
                         if self.state == 'leader' and term == self.current_term:
                             self.reset_step_down_deadline()
                             if body['success']:
-                                # Record that this follower received the entries
-                                self.next_index[node] = max(self.next_index[node], ni + len(entries))
-                                self._match_index[node] = max(self._match_index[node], ni - 1 + len(entries))
+                                self.next_index[_node] = \
+                                        max(self.next_index[_node], _ni + len(_entries))
+                                self._match_index[_node] = \
+                                        max(self._match_index[_node], _ni - 1 + len(_entries))
+                                log("node", _node, "# entries", len(_entries), "ni", ni)
+                                log("next index:", pformat(self.next_index))
                             else:
-                                # Back up
-                                self.next_index[node] -= 1
+                                self.next_index[_node] -= 1
 ```
 
 Then we'll issue the appendEntries request, and remember that we sent at least one message.
