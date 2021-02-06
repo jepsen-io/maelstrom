@@ -2,179 +2,57 @@
   (:gen-class)
   (:refer-clojure :exclude [run! test])
   (:require [clojure.tools.logging :refer [info warn]]
-            [maelstrom [net :as net]
+            [maelstrom [db :as db]
+                       [net :as net]
                        [process :as process]]
-            [knossos.model :as model]
+            [maelstrom.workload [lin-kv :as lin-kv]]
             [jepsen [checker :as checker]
                     [cli :as cli]
-                    [client :as client]
                     [core :as core]
-                    [control :as c]
-                    [db :as db]
                     [generator :as gen]
-                    [independent :as independent]
                     [nemesis :as nemesis]
                     [store :as store]
                     [tests :as tests]
                     [util :as util :refer [timeout]]]
-            [jepsen.checker.timeline :as timeline]
-            [jepsen.control.util :as cu]))
+            [jepsen.checker.timeline :as timeline]))
 
-(defn db
-  "Options:
+(def workloads
+  "A map of workload names to functions which construct workload maps."
+  {:lin-kv lin-kv/workload})
 
-      :bin - a binary to run
-      :args - args to that binary
-      :net - a network"
-  [opts]
-  (let [net (:net opts)
-        processes (atom {})]
-    (reify db/DB
-      (setup! [_ test node-id]
-        (info "Setting up" node-id)
-        (swap! processes assoc node-id
-               (process/start-node! {:node-id  node-id
-                                     :bin      (:bin opts)
-                                     :args     (:args opts)
-                                     :net      net
-                                     :dir      "/tmp"
-                                     :log-stderr? (:log-stderr test)
-                                     :log-file (->> (str node-id ".log")
-                                                    (store/path test)
-                                                    .getCanonicalPath)}))
-
-        (let [client (net/sync-client! net)]
-          (try
-            (let [res (net/sync-client-send-recv!
-                        client
-                        {:dest node-id
-                         :body {:type "raft_init"
-                                :node_id node-id
-                                :node_ids (:nodes test)}}
-                        10000)]
-              (when (not= "raft_init_ok" (:type (:body res)))
-                (throw (RuntimeException.
-                         (str "Expected a raft_init_ok message, but node "
-                              node-id " returned "
-                              (pr-str res))))))
-            (finally (net/sync-client-close! client)))))
-
-
-      (teardown! [_ test node]
-        (when-let [p (get @processes node)]
-          (info "Tearing down" node)
-          (process/stop-node! p)
-          (swap! processes dissoc node))))))
-
-(def known-failure-codes
-  #{1 10 11 20 21 22})
-
-(defn error
-  "Takes an invocation operation and a response message for a client request.
-  If the response is an error, constructs an appropriate error operation.
-  Otherwise, returns nil."
-  [op msg]
-  (let [body (:body msg)]
-    (when (= "error" (:type body))
-      (let [type (if (known-failure-codes (:code body))
-                   :fail
-                   :info)]
-        (assoc op :type type, :error [(:code body) (:text body)])))))
-
-(defn client
-  "Construct a client for the given network"
-  ([net]
-   (client net nil nil))
-  ([net conn node]
-   (reify client/Client
-     (open! [this test node]
-       (client net (net/sync-client! net) node))
-
-     (setup! [this test])
-
-     (invoke! [_ test op]
-       (let [[k v]          (:value op)
-             client-timeout (max (* 10 (:latency test)) 1000)]
-         (case (:f op)
-           :read (let [res (net/sync-client-send-recv!
-                             conn
-                             {:dest node
-                              :body {:type "read", :key  k}}
-                             client-timeout)
-                       v (:value (:body res))]
-                   (or (error op res)
-                       (assoc op
-                              :type :ok
-                              :value (independent/tuple k v))))
-
-           :write (let [res (net/sync-client-send-recv!
-                              conn
-                              {:dest node
-                               :body {:type "write", :key k, :value v}}
-                              client-timeout)]
-                    (or (error op res)
-                        (assoc op :type :ok)))
-
-           :cas (let [[v v'] v
-                      res (net/sync-client-send-recv!
-                            conn
-                            {:dest node
-                             :body {:type "cas", :key k, :from v, :to v'}}
-                            client-timeout)]
-                  (or (error op res)
-                      (assoc op :type :ok))))))
-
-     (teardown! [_ test])
-
-     (close! [_ test]
-       (net/sync-client-close! conn)))))
-
-(defn r   [_ _] {:type :invoke, :f :read, :value nil})
-(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 5)})
-(defn cas [_ _] {:type :invoke, :f :cas, :value [(rand-int 5) (rand-int 5)]})
-
-(defn test
-  "Construct a Jepsen test. Options:
-
-      :bin      Path to a binary to run
-      :args     Arguments to that binary"
-  [opts]
+(defn maelstrom-test
+  "Construct a Jepsen test from parsed CLI options"
+  [{:keys [bin args nodes rate] :as opts}]
   (let [net   (net/net (:latency opts)
                        (:log-net-send opts)
                        (:log-net-recv opts))
-        nodes (:nodes opts)]
+        db            (db/db {:net net, :bin bin, :args args})
+        workload-name (:workload opts)
+        workload      ((workloads workload-name) (assoc opts :net net))
+        ]
     (merge tests/noop-test
            opts
-           {:name    "maelstrom"
+           workload
+           {:name    (str (name workload-name))
             :ssh     {:dummy? true}
-            :db      (db {:net net
-                          :bin (:bin opts)
-                          :args []})
-            :client  (client net)
+            :db      db
             :nemesis (nemesis/partition-random-halves)
-            :nodes   nodes
             :net     (net/jepsen-adapter net)
-            :model   (model/cas-register)
             :checker (checker/compose
-                       {:perf     (checker/perf)
-                        :per-key  (independent/checker
-                                    (checker/compose
-                                      {:timeline (timeline/html)
-                                       :linear   (checker/linearizable)}))})
-            :generator (->> (when (pos? (:rate opts))
-                              (independent/concurrent-generator
-                                (count nodes)
-                                (range)
-                                (fn [k]
-                                  (->> (gen/mix [r w cas])
-                                       (gen/stagger (/ (:rate opts)))
-                                       (gen/limit 100)))))
+                       {:perf       (checker/perf)
+                        :exceptions (checker/unhandled-exceptions)
+                        :stats      (checker/stats)
+                        :workload   (:checker workload)})
+            :pure-generators true
+            :generator (->> (when (pos? rate)
+                              (->> (:generator workload)
+                                   (gen/stagger (/ rate))))
                             (gen/nemesis
                               (when-not (:no-partitions opts)
-                                (gen/seq (cycle [(gen/sleep 10)
-                                                 {:type :info, :f :start}
-                                                 (gen/sleep 10)
-                                                 {:type :info, :f :stop}]))))
+                                (cycle [(gen/sleep 10)
+                                        {:type :info, :f :start}
+                                        (gen/sleep 10)
+                                        {:type :info, :f :stop}])))
                             (gen/time-limit (:time-limit opts)))})))
 
 (def opt-spec
@@ -201,7 +79,13 @@
    [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
     :default 0
     :parse-fn #(Long/parseLong %)
-    :validate [(complement neg?) "Must be non-negative"]]])
+    :validate [(complement neg?) "Must be non-negative"]]
+
+   ["-w" "--workload NAME" "What workload to run."
+    :default "lin-kv"
+    :parse-fn keyword
+    :validate [workloads (cli/one-of workloads)]]
+   ])
 
 (defn opt-fn
   "Options validation"
@@ -212,8 +96,8 @@
 
 (defn -main
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn test
-                                         :opt-spec opt-spec
-                                         :opt-fn opt-fn})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn   maelstrom-test
+                                         :opt-spec  opt-spec
+                                         :opt-fn    opt-fn})
                    (cli/serve-cmd))
             args))
