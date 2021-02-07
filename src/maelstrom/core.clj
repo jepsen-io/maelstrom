@@ -5,7 +5,8 @@
             [maelstrom [db :as db]
                        [net :as net]
                        [process :as process]]
-            [maelstrom.workload [lin-kv :as lin-kv]]
+            [maelstrom.workload [echo :as echo]
+                                [lin-kv :as lin-kv]]
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [core :as core]
@@ -18,7 +19,8 @@
 
 (def workloads
   "A map of workload names to functions which construct workload maps."
-  {:lin-kv lin-kv/workload})
+  {:echo    echo/workload
+   :lin-kv  lin-kv/workload})
 
 (defn maelstrom-test
   "Construct a Jepsen test from parsed CLI options"

@@ -129,7 +129,7 @@ Maelstrom will send a single initialization message to each node when it
 starts, telling the node what its ID is, and who the other nodes are. When you receive this message, initialize your internal Raft state.
 
 ```edn
-{"type"     "raft_init"
+{"type"     "init"
  "msg_id"   An integer
  "node_id"  A string identifying this node
  "node_ids" An array of all node ids in the cluster, including this node
@@ -138,8 +138,8 @@ starts, telling the node what its ID is, and who the other nodes are. When you r
 When initialization is complete, respond with:
 
 ```edn
-{"type"         "raft_init_ok"
- "in_reply_to"  The message ID of the raft_init request}
+{"type"         "init_ok"
+ "in_reply_to"  The message ID of the init request}
 ```
 
 

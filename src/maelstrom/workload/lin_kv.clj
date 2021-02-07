@@ -35,43 +35,44 @@
      (invoke! [_ test op]
        (let [[k v]          (:value op)
              client-timeout (max (* 10 (:latency test)) 1000)]
-         (case (:f op)
-           :read (let [res (net/sync-client-send-recv!
-                             conn
-                             {:dest node
-                              :body {:type "read", :key  k}}
-                             client-timeout)
-                       v (:value (:body res))]
-                   (or (error op res)
-                       (assoc op
-                              :type :ok
-                              :value (independent/tuple k v))))
+         (try
+           (case (:f op)
+             :read (let [res (net/sync-client-send-recv!
+                               conn
+                               {:dest node
+                                :body {:type "read", :key  k}}
+                               client-timeout)
+                         v (:value (:body res))]
+                     (or (error op res)
+                         (assoc op
+                                :type :ok
+                                :value (independent/tuple k v))))
 
-           :write (let [res (net/sync-client-send-recv!
+             :write (let [res (net/sync-client-send-recv!
+                                conn
+                                {:dest node
+                                 :body {:type "write", :key k, :value v}}
+                                client-timeout)]
+                      (or (error op res)
+                          (assoc op :type :ok)))
+
+             :cas (let [[v v'] v
+                        res (net/sync-client-send-recv!
                               conn
                               {:dest node
-                               :body {:type "write", :key k, :value v}}
+                               :body {:type "cas", :key k, :from v, :to v'}}
                               client-timeout)]
                     (or (error op res)
-                        (assoc op :type :ok)))
-
-           :cas (let [[v v'] v
-                      res (net/sync-client-send-recv!
-                            conn
-                            {:dest node
-                             :body {:type "cas", :key k, :from v, :to v'}}
-                            client-timeout)]
-                  (or (error op res)
-                      (assoc op :type :ok))))))
+                        (assoc op :type :ok))))
+           (catch RuntimeException e
+             (if (re-find #"timed out" (.getMessage e))
+               (assoc op :type :info, :error :timed-out)
+               (throw e))))))
 
      (teardown! [_ test])
 
      (close! [_ test]
        (net/sync-client-close! conn)))))
-
-(defn r   [_ _] {:type :invoke, :f :read, :value nil})
-(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 5)})
-(defn cas [_ _] {:type :invoke, :f :cas, :value [(rand-int 5) (rand-int 5)]})
 
 (defn workload
   "Constructs a workload for linearizable registers, given option from the CLI
@@ -81,4 +82,3 @@
   [opts]
   (-> (lin-reg/test {:nodes (:nodes opts)})
       (assoc :client (client (:net opts)))))
-

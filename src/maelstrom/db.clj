@@ -34,17 +34,16 @@
             (let [res (net/sync-client-send-recv!
                         client
                         {:dest node-id
-                         :body {:type "raft_init"
+                         :body {:type "init"
                                 :node_id node-id
                                 :node_ids (:nodes test)}}
                         10000)]
-              (when (not= "raft_init_ok" (:type (:body res)))
+              (when (not= "init_ok" (:type (:body res)))
                 (throw (RuntimeException.
-                         (str "Expected a raft_init_ok message, but node "
+                         (str "Expected an init_ok message, but node "
                               node-id " returned "
                               (pr-str res))))))
             (finally (net/sync-client-close! client)))))
-
 
       (teardown! [_ test node]
         (when-let [p (get @processes node)]

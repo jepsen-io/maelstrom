@@ -462,9 +462,9 @@ class RaftNode():
             self.become_follower()
 
             log('I am:', self.node_id)
-            self.net.reply(msg, {'type': 'raft_init_ok'})
+            self.net.reply(msg, {'type': 'init_ok'})
 
-        self.net.on('raft_init', raft_init)
+        self.net.on('init', raft_init)
 
         # When a node requests our vote...
         def request_vote(msg):

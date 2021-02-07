@@ -426,14 +426,14 @@ class RaftNode
   end
 
   def setup_handlers!
-    @client.on "raft_init" do |msg|
+    @client.on "init" do |msg|
       raise "Can't init twice!" unless @state == :nascent
 
       body = msg[:body]
       self.node_id = body[:node_id]
       @node_ids = body[:node_ids]
       @logger << "Raft init!"
-      @client.reply! msg, {type: "raft_init_ok"}
+      @client.reply! msg, {type: "init_ok"}
 
       reset_election_deadline!
       become_follower!
