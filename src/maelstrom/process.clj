@@ -44,6 +44,7 @@
                 (warn "Discarding message for nonexistent node"
                       (:dest parsed)))))
           (catch java.io.IOException e)
+          (catch java.lang.InterruptedException e)
           (catch Throwable e
             (warn e "error processing stdout:\n" line))))
       :stdout-done)))
