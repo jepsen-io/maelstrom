@@ -33,20 +33,24 @@
   [^Process p node-id net]
   (future
     (with-thread-name (str "node " node-id)
-      (doseq [line (bs/to-line-seq (.getInputStream p))]
-        (try
-          (let [parsed (json/parse-string line true)]
-            (try
-              (net/send! net parsed)
-              (catch java.lang.AssertionError e
-                (when-not (re-find #"Invalid dest" (.getMessage e))
-                  (throw e))
-                (warn "Discarding message for nonexistent node"
-                      (:dest parsed)))))
-          (catch java.io.IOException e)
-          (catch java.lang.InterruptedException e)
-          (catch Throwable e
-            (warn e "error processing stdout:\n" line))))
+      (try
+        (doseq [line (bs/to-line-seq (.getInputStream p))]
+          (try
+            (let [parsed (json/parse-string line true)]
+              (try
+                (net/send! net parsed)
+                (catch java.lang.AssertionError e
+                  (when-not (re-find #"Invalid dest" (.getMessage e))
+                    (throw e))
+                  (warn "Discarding message for nonexistent node"
+                        (:dest parsed)))))
+            (catch InterruptedException e
+              (throw e))
+            (catch java.io.IOException e)
+            (catch Throwable e
+              (warn e "error processing stdout:\n" line))))
+        ; Interrupted? Shut down politely.
+        (catch InterruptedException e))
       :stdout-done)))
 
 (defn stdin-thread
@@ -64,8 +68,12 @@
                 (.write w "\n")
                 (.flush w))
               (catch java.io.IOException e)
+              (catch InterruptedException e
+                (throw e))
               (catch Throwable e
                 (warn e "error processing stdin")))))
+        ; Interrupted? Shut down politely.
+        (catch InterruptedException e)
         ; When we try to close the OutputStreamWriter, it'll try to write
         ; to its underlying stream and throw *again*
         (catch java.io.IOException e))
