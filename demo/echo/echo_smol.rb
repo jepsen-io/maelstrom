@@ -1,6 +1,4 @@
-#!/usr/bin/ruby
-
-# A simple echo server, in as few lines as possible.
+#!/usr/bin/env ruby
 
 require 'json'
 
@@ -10,34 +8,32 @@ class EchoServer
     @next_msg_id = 0
   end
 
-  # Replies to a request message with the given body.
   def reply!(request, body)
     id = @next_msg_id += 1
-    body[:msg_id] = id,
-    body[:in_reply_to] = request[:msg_id]
+    body = body.merge msg_id: id, in_reply_to: request[:body][:msg_id]
     msg = {src: @node_id, dest: request[:src], body: body}
     JSON.dump msg, STDOUT
     STDOUT << "\n"
     STDOUT.flush
   end
 
-  # Runs the main loop
   def main!
-    loop do
-      # Wait for a message
-      req = JSON.parse gets, symbolize_names: true
+    while line = STDIN.gets
+      req = JSON.parse line, symbolize_names: true
       STDERR << "Received #{req.inspect}\n"
 
       body = req[:body]
       case body[:type]
+        # Initialize this node
         when "init"
           @node_id = body[:node_id]
           STDERR << "Initialized node #{@node_id}\n"
           reply! req, {type: :init_ok}
 
+        # Send echoes back
         when "echo"
-          STDERR << "Echoing #{body}"
-          reply! req, body
+          STDERR << "Echoing #{body}\n"
+          reply! req, {echo: "not-right"}
       end
     end
   end
