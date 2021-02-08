@@ -1,10 +1,8 @@
 # Maelstrom
 
-Maelstrom is a toolkit to help in writing toy Raft implementations, as a part
-of a distributed systems workshop by [aphyr](https://jepsen.io/training). I'm
-still putting this class together, and I'm looking for feedback. If you have
-comments, or would like me to teach this class at your organization, contact
-[aphyr@jepsen.io](mailto:aphyr@jepsen.io).
+Maelstrom is a workbench for learning distributed systems by writing your own,
+tiny implementations of distributed algorithms. It's used as a part of a
+distributed systems workshop by [Jepsen](https://jepsen.io/training).
 
 ## Overview
 
@@ -45,9 +43,9 @@ algorithms using Maelstrom. We'll begin by setting up Maelstrom and its
 dependencies, write our own tiny echo server, and move on to more sophisticated
 workloads.
 
-- [Chapter 1: Getting Ready](doc/01-getting-ready/)
-- [Chapter 2: Echo](doc/02-echo/)
-- [Chapter 5: Raft](doc/05-raft/)
+- [Chapter 1: Getting Ready](doc/01-getting-ready/index.md)
+- [Chapter 2: Echo](doc/02-echo/index.md)
+- [Chapter 5: Raft](doc/05-raft/index.md)
 
 
 ## Controlling tests
@@ -72,9 +70,6 @@ To make tests more or less aggressive, use:
   operations.
 
 SSH options are unused; Maelstrom runs entirely on the local node.
-
-
-
 
 
 ## Protocol
