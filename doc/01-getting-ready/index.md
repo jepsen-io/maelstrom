@@ -123,4 +123,28 @@ INFO [2021-02-07 16:03:31,972] jepsen test runner - jepsen.core {:perf {:latency
 Everything looks good! ヽ(‘ー`)ノ
 ```
 
-At this point, you're ready to begin!
+Maelstrom starts five copies of `echo.rb`, connects them via its simulated
+network, and constructs five clients to perform echo requests against those
+servers. Finally, it checks to make sure that for every request, that server
+sent back a corresponding echo response.
+
+The results of this test are written to a directory in
+`store/<test-name>/<timestamp>/`; `store/latest` is a symlink to the most
+recently completed test. In that directory, you'll find:
+
+- 'n1.log`, `n2.log`, etc: The STDERR logs from each node
+- jepsen.log: The full log from the Maelstrom run
+- history.txt: The logical history of the system, as seen by clients
+- results.edn: Analysis results
+- latency-raw.png: Raw operation latencies during the test. Grey regions
+  indicate network partitions.
+
+You can browse these files using a file explorer, at the console, or via a web server that comes built-in to Maelstrom. In the main `maelstrom` directory, run:
+
+```sh
+lein run serve
+22:41:00.605 [main] INFO  jepsen.web - Web server running.
+22:41:00.608 [main] INFO  jepsen.cli - Listening on http://0.0.0.0:8080/
+```
+
+Congratulations! You're ready to start writing your own systems!
