@@ -1,7 +1,8 @@
 (ns maelstrom.workload.echo
   "A simple echo workload: sends a message, and expects to get that same
   message back."
-  (:require [maelstrom [net :as net]]
+  (:require [maelstrom [client :as c]
+                       [net :as net]]
             [jepsen [checker :as checker]
                     [client :as client]
                     [generator :as gen]
@@ -10,30 +11,24 @@
             [knossos.history :as history]
             [slingshot.slingshot :refer [try+ throw+]]))
 
-(def timeout 5000)
-
 (defn client
   ([net]
    (client net nil nil))
   ([net conn node]
    (reify client/Client
      (open! [this test node]
-       (client net (net/sync-client! net) node))
+       (client net (c/open! net) node))
 
      (setup! [this test])
 
      (invoke! [_ test op]
-       (try+ (let [res (net/sync-client-send-recv!
-                         conn
-                         {:dest node
-                          :body {:type :echo, :echo (:value op)}}
-                         timeout)]
-               (assoc op :type :ok, :value (:body res)))))
+       (try+ (let [res (c/rpc! conn node {:type :echo, :echo (:value op)})]
+               (assoc op :type :ok, :value res))))
 
      (teardown! [_ test])
 
      (close! [_ test]
-       (net/sync-client-close! conn)))))
+       (c/close! conn)))))
 
 (defn checker
   "Expects responses to every echo operation to match the invocation's value."

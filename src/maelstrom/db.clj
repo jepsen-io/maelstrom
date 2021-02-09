@@ -3,7 +3,8 @@
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen [db :as db]
                     [store :as store]]
-            [maelstrom [net :as net]
+            [maelstrom [client :as client]
+                       [net :as net]
                        [process :as process]]))
 
 (defn db
@@ -29,21 +30,21 @@
                                                     (store/path test)
                                                     .getCanonicalPath)}))
 
-        (let [client (net/sync-client! net)]
+        (let [client (client/open! net)]
           (try
-            (let [res (net/sync-client-send-recv!
+            (let [res (client/rpc!
                         client
-                        {:dest node-id
-                         :body {:type "init"
-                                :node_id node-id
-                                :node_ids (:nodes test)}}
+                        node-id
+                        {:type "init"
+                         :node_id node-id
+                         :node_ids (:nodes test)}
                         10000)]
-              (when (not= "init_ok" (:type (:body res)))
+              (when (not= "init_ok" (:type res))
                 (throw (RuntimeException.
                          (str "Expected an init_ok message, but node "
                               node-id " returned "
                               (pr-str res))))))
-            (finally (net/sync-client-close! client)))))
+            (finally (client/close! client)))))
 
       (teardown! [_ test node]
         (when-let [p (get @processes node)]
