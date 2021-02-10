@@ -25,9 +25,9 @@ class GSetNode
       end
 
       # Broadcast entire value to other nodes
-      #@node.other_node_ids.each do |n|
-      #  @node.send! n, {type: "replicate_full", value: @set.to_a}
-      #end
+      @node.other_node_ids.each do |n|
+        @node.send! n, {type: "replicate_full", value: @set.to_a}
+      end
     end
 
     # Accept a single element from another node
