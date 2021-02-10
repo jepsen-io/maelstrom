@@ -25,7 +25,7 @@
                   (assoc op :type :ok))
 
          :read (assoc op :type :ok
-                      :value (c/rpc! conn node {:type :read}))))
+                      :value (:value (c/rpc! conn node {:type :read})))))
 
      (teardown! [_ test])
 
@@ -39,6 +39,6 @@
       {:net     A Maelstrom network}"
   [opts]
   {:client    (client (:net opts))
-   :generator (gen/mix [(->> (range) (map (fn [x] {:type :add, :value x})))
+   :generator (gen/mix [(->> (range) (map (fn [x] {:f :add, :value x})))
                         (repeat {:f :read})])
    :checker   (checker/set-full)})

@@ -79,4 +79,11 @@ class Node
       handler.call msg
     end
   end
+
+  # Returns an array of nodes other than ourselves.
+  def other_node_ids
+    ids = @node_ids.clone
+    ids.delete @node_id
+    ids
+  end
 end
