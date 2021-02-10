@@ -15,8 +15,8 @@
 (def common-errors
   "Errors which all Maelstrom tests support. A map of error codes to keyword
   names for those errors, and whether or not that error is definite."
-  {0  {:definite? false   :name :net-timed-out}
-   1  {:definite? true    :name :node-does-not-exist}
+  {0  {:definite? false   :name :timeout}
+   1  {:definite? true    :name :node-not-found}
    10 {:definite? true    :name :not-supported}
    11 {:definite? true    :name :temporarily-unavailable}})
 
@@ -75,7 +75,12 @@
                msg     (net/recv! net node-id timeout)]
            (cond ; Nothing in queue
                  (nil? msg)
-                 (throw (RuntimeException. "timed out"))
+                 (throw+ {:type       ::timeout
+                          :name       :timeout
+                          :definite?  false
+                          :code       0}
+                         nil
+                         "Client read timeout")
 
                  ; Reply to some other message we sent (e.g. that we gave up on)
                  (not= target-msg-id (:in_reply_to (:body msg)))

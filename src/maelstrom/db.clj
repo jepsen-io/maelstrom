@@ -5,7 +5,8 @@
                     [store :as store]]
             [maelstrom [client :as client]
                        [net :as net]
-                       [process :as process]]))
+                       [process :as process]]
+            [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn db
   "Options:
@@ -31,7 +32,7 @@
                                                     .getCanonicalPath)}))
 
         (let [client (client/open! net)]
-          (try
+          (try+
             (let [res (client/rpc!
                         client
                         node-id
@@ -40,11 +41,20 @@
                          :node_ids (:nodes test)}
                         10000)]
               (when (not= "init_ok" (:type res))
-                (throw (RuntimeException.
-                         (str "Expected an init_ok message, but node "
-                              node-id " returned "
-                              (pr-str res))))))
-            (finally (client/close! client)))))
+                (throw+ {:type      :init-failed
+                         :node      node-id
+                         :response  res}
+                        nil
+                        (str "Expected an init_ok message, but node responded with "
+                             (pr-str res)))))
+            (catch [:type :maelstrom.client/timeout] e
+              (throw+ {:type :init-failed
+                       :node node-id}
+                      (:throwable &throw-context)
+                      (str "Expected node " node-id
+                           " to respond to an init message, but node did not respond.")))
+            (finally
+              (client/close! client)))))
 
       (teardown! [_ test node]
         (when-let [p (get @processes node)]

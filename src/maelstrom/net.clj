@@ -2,7 +2,8 @@
   "A simulated, mutable unordered network, supporting randomized delivery,
   selective packet loss, and long-lasting partitions."
   (:require [clojure.tools.logging :refer [info warn]]
-            [jepsen.net :as net])
+            [jepsen.net :as net]
+            [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
@@ -66,8 +67,12 @@
   [net node]
   (if-let [q (-> net deref :queues (get node))]
     q
-    (throw (RuntimeException.
-             (str "No such node in network: " (pr-str node))))))
+    (throw+ {:type      ::node-not-found
+             :name      :node-not-found
+             :code      1
+             :definite? true}
+            nil
+            (str "No such node in network: " (pr-str node)))))
 
 (defn validate-msg
   "Checks to make sure a message is well-formed and deliverable on the given
