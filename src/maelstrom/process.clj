@@ -1,12 +1,14 @@
 (ns maelstrom.process
   "Handles process spawning and IO"
-  (:require [clojure.string :as str]
+  (:require [amalloy.ring-buffer :as ring-buffer]
+            [clojure.string :as str]
             [clojure.java.io :as io]
             [clojure.tools.logging :refer [info warn]]
             [byte-streams :as bs]
             [cheshire.core :as json]
             [jepsen.util :refer [with-thread-name]]
-            [maelstrom [net :as net]])
+            [maelstrom [net :as net]]
+            [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.lang Process
                       ProcessBuilder
                       ProcessBuilder$Redirect)
@@ -14,27 +16,38 @@
                     OutputStreamWriter)
            (java.util.concurrent TimeUnit)))
 
+(def debug-buffer-size
+  "Number of lines of stderr and stdout we store for debugging assistance"
+  32)
+
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
-  [^Process p node-id log-writer log-stderr?]
+  [^Process p node-id debug-buffer log-writer log-stderr?]
   (future
     (with-thread-name (str "node " node-id)
       (with-open [log log-writer]
         (doseq [line (bs/to-line-seq (.getErrorStream p))]
+          ; Console log
           (when log-stderr? (info line))
+          ; File log
           (.write log line)
           (.write log "\n")
-          (.flush log)))
+          (.flush log)
+          ; Debugging buffer log
+          (swap! debug-buffer conj line)))
       :stderr-done)))
 
 (defn stdout-thread
   "Spawns a future which reads stdout from a process and inserts messages into
   the network."
-  [^Process p node-id net]
+  [^Process p node-id debug-buffer net]
   (future
     (with-thread-name (str "node " node-id)
       (try
         (doseq [line (bs/to-line-seq (.getInputStream p))]
+          ; Debugging buffer
+          (swap! debug-buffer conj line)
+          ; Parse and insert into network
           (try
             (let [parsed (json/parse-string line true)]
               (try
@@ -110,30 +123,50 @@
                     (.redirectOutput ProcessBuilder$Redirect/PIPE)
                     (.redirectInput  ProcessBuilder$Redirect/PIPE)
                     (.start))
-        running? (atom true)]
+        running? (atom true)
+        stdout-debug-buffer (atom (ring-buffer/ring-buffer debug-buffer-size))
+        stderr-debug-buffer (atom (ring-buffer/ring-buffer debug-buffer-size))]
     {:process       process
      :running?      running?
      :node-id       node-id
      :net           net
+     :log-file      (:log-file opts)
+     :stderr-debug-buffer stderr-debug-buffer
+     :stdout-debug-buffer stdout-debug-buffer
      :stdin-thread  (stdin-thread  process node-id net running?)
-     :stderr-thread (stderr-thread process node-id log (:log-stderr? opts))
-     :stdout-thread (stdout-thread process node-id net)}))
+     :stderr-thread (stderr-thread process node-id stderr-debug-buffer log
+                                   (:log-stderr? opts))
+     :stdout-thread (stdout-thread process node-id stdout-debug-buffer net)}))
 
 (defn stop-node!
-  "Kills a node."
-  [{:keys [process running? node-id net
-           stdin-thread stderr-thread stdout-thread]}]
-  (let [exit-status (-> process
-                        .destroyForcibly
-                        (.waitFor 5 TimeUnit/SECONDS))]
-    ; Shut down workers
-    (reset! running? false)
-    (mapv deref [stdin-thread stderr-thread stdout-thread])
+  "Kills a node. Throws if the node already exited."
+  [{:keys [^Process process running? node-id net log-file
+           stdin-thread stderr-thread stdout-thread
+           stderr-debug-buffer stdout-debug-buffer]}]
+  (when-not (.isAlive process)
+    (throw+ {:type :node-crashed
+             :node node-id
+             :exit (.exitValue process)}
+            nil
+            (str "Node " node-id " crashed with exit status "
+                 (.exitValue process)
+                 ". Before crashing, it wrote to STDOUT:\n\n"
+                 (->> @stdout-debug-buffer (str/join "\n"))
+                 "\n\nAnd to STDERR:\n\n"
+                 (->> @stderr-debug-buffer (str/join "\n"))
+                 "\n\n"
+                 "Full STDERR logs are available in " log-file)))
+  ; Kill
+  (.. ^Process process destroyForcibly (waitFor 5 TimeUnit/SECONDS))
+  ; Shut down workers
+  (reset! running? false)
+  (mapv deref [stdin-thread stderr-thread stdout-thread])
 
-    ; Remove self from network
-    (net/remove-node! net node-id)
+  ; Remove self from network
+  (net/remove-node! net node-id)
 
-    ; Return status of workers
-    {:stdin  @stdin-thread
-     :stderr @stderr-thread
-     :stdout @stdout-thread}))
+  ; Return status of workers
+  {:exit        (.exitValue process)
+   :stdin       @stdin-thread
+   :stderr      @stderr-thread
+   :stdout      @stdout-thread})

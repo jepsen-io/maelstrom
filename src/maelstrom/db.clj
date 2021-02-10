@@ -59,5 +59,9 @@
       (teardown! [_ test node]
         (when-let [p (get @processes node)]
           (info "Tearing down" node)
-          (process/stop-node! p)
+          (let [{:keys [exit stdin stdout stderr]} (process/stop-node! p)]
+            (info node :exit exit)
+            (info node :stdin stdin)
+            (info node :stdout stdout)
+            (info node :stderr stderr))
           (swap! processes dissoc node))))))
