@@ -5,7 +5,7 @@
 require_relative 'node.rb'
 require 'set'
 
-class EchoNode
+class GSetNode
   def initialize
     @node = Node.new
     @set = Set.new
@@ -20,14 +20,14 @@ class EchoNode
       @node.reply! msg, {type: "add_ok"}
 
       # Broadcast add to other nodes
-      #@node.other_node_ids.each do |n|
-      #  @node.send! n, {type: "replicate_one", element: element}
-      #end
+      @node.other_node_ids.each do |n|
+        @node.send! n, {type: "replicate_one", element: element}
+      end
 
       # Broadcast entire value to other nodes
-      @node.other_node_ids.each do |n|
-        @node.send! n, {type: "replicate_full", value: @set.to_a}
-      end
+      #@node.other_node_ids.each do |n|
+      #  @node.send! n, {type: "replicate_full", value: @set.to_a}
+      #end
     end
 
     # Accept a single element from another node
@@ -46,4 +46,4 @@ class EchoNode
   end
 end
 
-EchoNode.new.main!
+GSetNode.new.main!

@@ -1,9 +1,11 @@
 (ns maelstrom.core
   (:gen-class)
   (:refer-clojure :exclude [run! test])
-  (:require [clojure.tools.logging :refer [info warn]]
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :refer [info warn]]
             [maelstrom [db :as db]
                        [net :as net]
+                       [nemesis :as nemesis]
                        [process :as process]]
             [maelstrom.workload [echo :as echo]
                                 [g-set :as g-set]
@@ -12,7 +14,6 @@
                     [cli :as cli]
                     [core :as core]
                     [generator :as gen]
-                    [nemesis :as nemesis]
                     [store :as store]
                     [tests :as tests]
                     [util :as util :refer [timeout]]]
@@ -24,6 +25,10 @@
    :g-set   g-set/workload
    :lin-kv  lin-kv/workload})
 
+(def nemeses
+  "A set of valid nemeses you can pass at the CLI."
+  #{:partition})
+
 (defn maelstrom-test
   "Construct a Jepsen test from parsed CLI options"
   [{:keys [bin args nodes rate] :as opts}]
@@ -33,40 +38,47 @@
         db            (db/db {:net net, :bin bin, :args args})
         workload-name (:workload opts)
         workload      ((workloads workload-name) (assoc opts :net net))
-        ]
+        nemesis-package (nemesis/package {:db       db
+                                          :interval (:nemesis-interval opts)
+                                          :faults   (:nemesis opts)})
+        generator (->> (when (pos? rate)
+                         (gen/stagger (/ rate) (:generator workload)))
+                       (gen/nemesis (:generator nemesis-package))
+                       (gen/time-limit (:time-limit opts)))
+        ; If this workload has a final generator, end the nemesis, wait for
+        ; recovery, and perform final ops.
+        generator (if-let [final (:final-generator workload)]
+                    (gen/phases generator
+                                (gen/nemesis (:final-generator nemesis-package))
+                                (gen/log "Waiting for recovery...")
+                                (gen/sleep 10)
+                                (gen/clients final))
+                    generator)]
     (merge tests/noop-test
            opts
            workload
            {:name    (str (name workload-name))
             :ssh     {:dummy? true}
             :db      db
-            :nemesis (nemesis/partition-random-halves)
+            :nemesis (:nemesis nemesis-package)
             :net     (net/jepsen-adapter net)
             :checker (checker/compose
                        {:perf       (checker/perf)
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (checker/stats)
                         :workload   (:checker workload)})
-            :pure-generators true
-            :generator (->> (when (pos? rate)
-                              (->> (:generator workload)
-                                   (gen/stagger (/ rate))))
-                            (gen/nemesis
-                              (when-not (:no-partitions opts)
-                                (cycle [(gen/sleep 10)
-                                        {:type :info, :f :start}
-                                        (gen/sleep 10)
-                                        {:type :info, :f :stop}])))
-                            (gen/time-limit (:time-limit opts)))})))
+            :generator generator
+            :pure-generators true})))
 
 (def opt-spec
   "Extra options for the CLI"
   [[nil "--bin FILE"        "Path to binary which runs a node"]
 
-   [nil "--rate RATE" "Approximate number of request/sec/client"
-    :default  1
-    :parse-fn #(Double/parseDouble %)
-    :validate [(complement neg?) "Can't be negative"]]
+   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
+    :default 0
+    :parse-fn #(Long/parseLong %)
+    :validate [(complement neg?) "Must be non-negative"]]
+
 
    [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
@@ -77,13 +89,23 @@
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
     :default false]
 
-   [nil "--no-partitions"   "Let the network run normally"
-    :default false]
+   [nil "--nemesis FAULTS" "A comma-separated list of faults to inject."
+    :default #{}
+    :parse-fn (fn [string]
+                (->> (str/split string #"\s*,\s*")
+                     (map keyword)
+                     set))
+    :validate [(partial every? nemeses) (cli/one-of nemeses)]]
 
-   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
-    :default 0
-    :parse-fn #(Long/parseLong %)
-    :validate [(complement neg?) "Must be non-negative"]]
+   [nil "--nemesis-interval SECONDS" "How many seconds between nemesis operations, on average?"
+    :default  10
+    :parse-fn read-string
+    :validate [pos? "Must be positive"]]
+
+   [nil "--rate RATE" "Approximate number of request/sec/client"
+    :default  1
+    :parse-fn #(Double/parseDouble %)
+    :validate [(complement neg?) "Can't be negative"]]
 
    ["-w" "--workload NAME" "What workload to run."
     :default "lin-kv"
