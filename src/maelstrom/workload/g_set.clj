@@ -41,4 +41,5 @@
   {:client    (client (:net opts))
    :generator (gen/mix [(->> (range) (map (fn [x] {:f :add, :value x})))
                         (repeat {:f :read})])
+   :final-generator (gen/each-thread {:f :read})
    :checker   (checker/set-full)})

@@ -11,7 +11,8 @@ class Node
     @next_msg_id = 0
     @handlers = {}
     @callbacks = {}
-    @lock = Mutex.new
+    @every_tasks = []
+    @lock = Monitor.new
 
     @in_buffer = ""
 
@@ -23,6 +24,13 @@ class Node
       STDERR.puts "Node initialized"
       reply! msg, {type: "init_ok"}
     end
+  end
+
+  # Returns an array of nodes other than ourselves.
+  def other_node_ids
+    ids = @node_ids.clone
+    ids.delete @node_id
+    ids
   end
 
   # Register a new message type handler
@@ -47,6 +55,13 @@ class Node
     end
   end
 
+  # Broadcasts a message to all other nodes.
+  def broadcast!(body)
+    other_node_ids.each do |n|
+      send! n, body
+    end
+  end
+
   # Reply to a request with a response body
   def reply!(req, body)
     body = body.merge in_reply_to: req[:body][:msg_id]
@@ -63,8 +78,31 @@ class Node
     end
   end
 
+  # Periodically evaluates block every dt seconds with the node lock
+  # held--helpful for building periodic replication tasks, timeouts, etc.
+  def every(dt, &block)
+    @every_tasks << {dt: dt, f: block}
+  end
+
+  # Launches threads to process periodic handlers
+  def start_every_tasks!
+    @every_tasks.each do |task|
+      Thread.new do
+        loop do
+          @lock.synchronize do
+            task[:f].call
+          end
+          sleep task[:dt]
+        end
+      end
+    end
+  end
+
   # Loops, processing messages.
   def main!
+    Thread.abort_on_exception = true
+    start_every_tasks!
+
     while line = STDIN.gets
       msg = JSON.parse line, symbolize_names: true
       STDERR.puts "Received #{msg.inspect}"
@@ -78,12 +116,5 @@ class Node
       end
       handler.call msg
     end
-  end
-
-  # Returns an array of nodes other than ourselves.
-  def other_node_ids
-    ids = @node_ids.clone
-    ids.delete @node_id
-    ids
   end
 end

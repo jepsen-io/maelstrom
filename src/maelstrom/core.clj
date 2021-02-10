@@ -64,6 +64,7 @@
             :net     (net/jepsen-adapter net)
             :checker (checker/compose
                        {:perf       (checker/perf)
+                        :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (checker/stats)
                         :workload   (:checker workload)})
