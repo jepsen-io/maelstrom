@@ -67,7 +67,7 @@ class Node
   def main!
     while line = STDIN.gets
       msg = JSON.parse line, symbolize_names: true
-      @logger << "Received #{msg.inspect}"
+      STDERR.puts "Received #{msg.inspect}"
 
       handler = nil
       if handler = @callbacks[msg[:body][:in_reply_to]]
