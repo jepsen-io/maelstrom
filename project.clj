@@ -8,4 +8,6 @@
                  [jepsen "0.2.3-SNAPSHOT"]
                  [amalloy/ring-buffer "1.3.1"]
                  [cheshire "5.7.0"]
-                 [byte-streams "0.2.2"]])
+                 [byte-streams "0.2.2"]
+                 ; For range sets
+                 [com.google.guava/guava "30.1-jre"]])

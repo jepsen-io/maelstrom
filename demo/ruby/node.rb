@@ -18,11 +18,17 @@ class Node
 
     # Register an initial handler for the init message
     on "init" do |msg|
+      # Set our node ID and IDs
       body = msg[:body]
       @node_id = body[:node_id]
       @node_ids = body[:node_ids]
-      STDERR.puts "Node initialized"
+
+      # Let Maelstrom know we initialized
       reply! msg, {type: "init_ok"}
+      STDERR.puts "Node initialized"
+
+      # Spawn periodic task handlers
+      start_every_tasks!
     end
   end
 
@@ -101,20 +107,21 @@ class Node
   # Loops, processing messages.
   def main!
     Thread.abort_on_exception = true
-    start_every_tasks!
 
     while line = STDIN.gets
       msg = JSON.parse line, symbolize_names: true
       STDERR.puts "Received #{msg.inspect}"
 
       handler = nil
-      if handler = @callbacks[msg[:body][:in_reply_to]]
-        @callbacks.delete msg[:body][:in_reply_to]
-      elsif handler = @handlers[msg[:body][:type]]
-      else
-        raise "No callback or handler for #{msg.inspect}"
+      @lock.synchronize do
+        if handler = @callbacks[msg[:body][:in_reply_to]]
+          @callbacks.delete msg[:body][:in_reply_to]
+        elsif handler = @handlers[msg[:body][:type]]
+        else
+          raise "No callback or handler for #{msg.inspect}"
+        end
+        handler.call msg
       end
-      handler.call msg
     end
   end
 end

@@ -9,6 +9,7 @@
                        [process :as process]]
             [maelstrom.workload [echo :as echo]
                                 [g-set :as g-set]
+                                [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]]
             [jepsen [checker :as checker]
                     [cli :as cli]
@@ -21,9 +22,10 @@
 
 (def workloads
   "A map of workload names to functions which construct workload maps."
-  {:echo    echo/workload
-   :g-set   g-set/workload
-   :lin-kv  lin-kv/workload})
+  {:echo        echo/workload
+   :g-set       g-set/workload
+   :pn-counter  pn-counter/workload
+   :lin-kv      lin-kv/workload})
 
 (def nemeses
   "A set of valid nemeses you can pass at the CLI."
