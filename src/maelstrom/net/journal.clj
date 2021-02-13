@@ -2,7 +2,7 @@
   "A network's journal is a mutable store for keeping track of the history of
   network operations. We're not aiming for precision here--there's lag time
   between what the network sees and what nodes actually do--so we use
-  jepsen.util/relative-time as our order for events.
+  jepsen.util/linear-time as our order for events.
 
   A journal is an atom to a vector containing a list of events, which are
   appended linearly to the end of the journal. Events are maps of this form:
@@ -15,7 +15,7 @@
   latency distributions, etc."
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen [checker :as checker]
-                    [util :as util :refer [relative-time-nanos]]]
+                    [util :as util :refer [linear-time-nanos]]]
             [tesser [core :as t]
                     [math :as tm]
                     [utils :as tu]]))
@@ -28,23 +28,16 @@
 (defn log-send!
   "Logs a send operation"
   [journal message]
-  (try
-    (swap! journal conj {:type    :send
-                         :time    (relative-time-nanos)
-                         :message message})
-    (catch NullPointerException e
-      ; Relative time hasn't started yet
-      )))
+  (swap! journal conj {:type    :send
+                       :time    (linear-time-nanos)
+                       :message message}))
 
 (defn log-recv!
   "Logs a receive operation"
   [journal message]
-  (try (swap! journal conj {:type    :recv
-                            :time    (relative-time-nanos)
-                            :message message})
-       (catch NullPointerException e
-         ; Relative-time hasn't started yet.
-         )))
+  (swap! journal conj {:type    :recv
+                       :time    (linear-time-nanos)
+                       :message message}))
 
 ;; Analysis
 

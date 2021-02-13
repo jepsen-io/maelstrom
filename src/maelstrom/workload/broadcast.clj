@@ -98,7 +98,8 @@
       {:net     A Maelstrom network}"
   [opts]
   {:client          (client (:net opts))
-   :generator       (gen/mix [(fn [] {:f :broadcast, :value (- (rand-int 10) 5)})
+   :generator       (gen/mix [(->> (range)
+                                   (map (fn [x] {:f :broadcast, :value x})))
                               (repeat {:f :read})])
    :final-generator (gen/each-thread {:f :read, :final? true})
    :checker         (checker)})
