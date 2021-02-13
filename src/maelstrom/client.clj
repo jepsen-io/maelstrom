@@ -3,7 +3,9 @@
   receiving messages, performing RPC calls, and throwing exceptions from
   errors."
   (:require [clojure.tools.logging :refer [info warn]]
-            [maelstrom.net :as net]
+            [clojure.pprint :refer [pprint]]
+            [maelstrom [net :as net]
+                       [util :as u]] 
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
@@ -43,11 +45,16 @@
   (reset! (:waiting-for client) :closed)
   (net/remove-node! (:net client) (:node-id client)))
 
+(defn msg-id!
+  "Generates a new message ID for a client."
+  [client]
+  (swap! (:next-msg-id client) inc))
+
 (defn send!
   "Sends a message over the given client. Fills in the message's :src and
   [:body :msg_id]"
   [client msg]
-  (let [msg-id (swap! (:next-msg-id client) inc)
+  (let [msg-id (or (:msg-id (:body msg)) (msg-id! client))
         net    (:net client)
         ok?    (compare-and-set! (:waiting-for client) nil msg-id)
         msg    (-> msg
@@ -120,10 +127,97 @@
 (defn rpc!
   "Takes a client, a destination node, and a message body. Sends a message to
   that node, and waits for a response. Returns response body, interpreting
-  error codes, if any, as exceptions."
+  error codes, if any, as exceptions. Options are:
+
+  :timeout - in milliseconds, how long to wait for a response"
   ([client dest body]
    (rpc! client dest body default-timeout))
   ([client dest body timeout]
      (->> (send+recv! client {:dest dest, :body body} timeout)
           (throw-errors! client)
           :body)))
+
+(def rpc-registry
+  "A persistent registry of all RPC calls we've defined. Used to automatically
+  generate documentation!"
+  (atom []))
+
+(defn print-registry
+  "Prints out the RPC registry to the console, for help messages."
+  ([]
+   (print-registry @rpc-registry))
+  ([rpcs]
+   (doseq [rpc rpcs]
+     (println "\n")
+     (println "##" (:name rpc) "\n")
+     (println (:doc rpc) "\n")
+     (println "Request:\n")
+     (pprint (:send rpc))
+     (println "\nResponse:\n")
+     (pprint (:recv rpc)))))
+
+(defn check-body
+  "Uses a schema checker to validate `data`. Throws an exception if validation
+  fails, explaining why the message failed validation. Returns message
+  otherwise. Type is either :send or :recv, and is used to construct an
+  appropriate type and error message."
+  [type schema checker body]
+  (when-let [errs (checker body)]
+    (throw+ {:type     (case type
+                         :send :malformed-rpc-request
+                         :recv :malformed-rpc-response)
+             :body     body
+             :error    errs}
+            nil
+            (str "Malformed RPC "
+                 (case type
+                   :send "request"
+                   :recv "response")
+                 ": expected a message body like\n\n"
+                 (with-out-str (pprint schema))
+                 "\n... but received\n\n"
+                 (with-out-str (pprint body))
+                 "\nSpecifically, this is invalid because:\n\n"
+                 (with-out-str (pprint errs))))))
+
+(defmacro defrpc
+  "Defines a typed RPC call: a function called `fname`, which takes arguments
+  as for `rpc!`, and validates that the sent and received bodies conform to the
+  given schema. This is a macro because we want to re-use the schema
+  checkers--they're expensive to validate ad-hoc."
+  [fname docstring send-schema recv-schema]
+  `(let [; Enhance schemas to include message ids and reply_to fields.
+         send-schema#  (assoc ~send-schema
+                              :msg_id s/Int)
+         recv-schema#  (assoc ~recv-schema
+                              :in_reply_to s/Int)
+         ; Construct persistent checkers
+         send-checker# (s/checker send-schema#)
+         recv-checker# (s/checker recv-schema#)
+
+         ; Extract the message type string from the request schema
+         message-type# (-> ~send-schema s/explain :type second)]
+     (assert (string? message-type#))
+
+     ; Record RPC spec in registry
+     (swap! rpc-registry conj
+            {:ns   (ns-name *ns*)
+             :name (quote ~fname)
+             :doc  ~docstring
+             :send send-schema#
+             :recv recv-schema#})
+
+     (defn ~fname [client# dest# body#]
+       ; Generate a message ID here, so it passes the schema checker. This is a
+       ; little duplicated effort, but it means that schemas say *exactly* what
+       ; bodies should be, and I think that will help implementers.
+       (let [body# (assoc body#
+                          :type   message-type#
+                          :msg_id (msg-id! client#))]
+         ; Validate request
+         (check-body :send send-schema# send-checker# body#)
+         ; Make RPC call
+         (let [res# (rpc! client# dest# body#)]
+           ; Validate response
+           (check-body :recv recv-schema# recv-checker# res#)
+           res#)))))

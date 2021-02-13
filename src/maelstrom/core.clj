@@ -3,7 +3,8 @@
   (:refer-clojure :exclude [run! test])
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer [info warn]]
-            [maelstrom [db :as db]
+            [maelstrom [client :as c]
+                       [db :as db]
                        [net :as net]
                        [nemesis :as nemesis]
                        [process :as process]]
@@ -142,5 +143,9 @@
   (cli/run! (merge (cli/single-test-cmd {:test-fn   maelstrom-test
                                          :opt-spec  opt-spec
                                          :opt-fn    opt-fn})
-                   (cli/serve-cmd))
+                   (cli/serve-cmd)
+                   {"doc" {:opt-spec []
+                           :run (fn [opts]
+                                  (c/print-registry))}})
+
             args))

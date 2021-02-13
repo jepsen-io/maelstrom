@@ -13,4 +13,7 @@
                  [tesser.core "1.0.3"]
                  [tesser.math "1.0.3"]
                  ; For range sets
-                 [com.google.guava/guava "30.1-jre"]])
+                 [com.google.guava/guava "30.1-jre"]
+                 ; Input validation
+                 [prismatic/schema "1.1.12"]
+                 ])

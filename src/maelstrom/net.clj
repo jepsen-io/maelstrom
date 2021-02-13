@@ -4,9 +4,22 @@
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen.net :as net]
             [maelstrom.net.journal :as j]
-            [slingshot.slingshot :refer [try+ throw+]])
+            [slingshot.slingshot :refer [try+ throw+]]
+            [schema.core :as s])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
+
+(def NodeId
+  "Node identifiers are represented as strings."
+  String)
+
+(def Message
+  "Messages always have a :src, :dest, and :body. An `:id` field is optional,
+  and is assigned internally."
+  {:src                 NodeId
+   :dest                NodeId
+   :body                s/Any
+   (s/optional-key :id) s/Int})
 
 (defn latency-compare [a b]
   (compare (:deadline a) (:deadline b)))

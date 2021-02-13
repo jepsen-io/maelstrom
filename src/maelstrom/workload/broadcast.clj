@@ -2,6 +2,7 @@
   "A broadcast system. Essentially a test of eventually-consistent set
   addition, but also provides an initial `topology` message to the cluster with
   a set of neighbors for each node to use."
+  (:refer-clojure :exclude [read])
   (:require [clojure.pprint :refer [pprint]]
             [clojure.tools.logging :refer [info warn]]
             [maelstrom [client :as c]
@@ -10,7 +11,29 @@
                     [client :as client]
                     [generator :as gen]]
             [knossos.op :as op]
+            [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
+
+(c/defrpc topology!
+  "A topology message is sent at the start of the test, after initialization,
+  and informs the node of an optional network topology to use for broadcast.
+  The topology consists of a map of node IDs to lists of neighbor node IDs."
+  {:type      (s/eq "topology")
+   :topology  {net/NodeId [net/NodeId]}}
+  {:type      (s/eq "topology_ok")})
+
+(c/defrpc broadcast!
+  "Sends a single message into the broadcast system, and requests that it be
+  broadcast to everyone. Nodes respond with a simple acknowledgement message."
+  {:type     (s/eq "broadcast")
+   :message  s/Any}
+  {:type     (s/eq "broadcast_ok")})
+
+(c/defrpc read
+  "Requests all messages present on a node."
+  {:type      (s/eq "read")}
+  {:type      (s/eq "read_ok")
+   :messages  [s/Any]})
 
 (defn grid-topology
   "Arranges nodes into a roughly-square grid topology, such that each node has
@@ -55,20 +78,17 @@
        (client net (c/open! net) node))
 
      (setup! [this test]
-       (let [topo (topology test)
-             res (c/rpc! conn node {:type :topology, :topology topo})]
-         (assert (= "topology_ok" (:type res))
-                 (str "Expected a type: topology_ok response, but got"
-                      (pr-str res)))))
+       (let [topo (topology test)]
+         (topology! conn node {:type :topology, :topology topo})))
 
      (invoke! [_ test op]
        (case (:f op)
          :broadcast
-         (do (c/rpc! conn node {:type :broadcast, :message (:value op)})
+         (do (broadcast! conn node {:type :broadcast, :message (:value op)})
              (assoc op :type :ok))
 
          :read
-         (->> (c/rpc! conn node {:type :read})
+         (->> (read conn node {:type :read})
               :messages
               (assoc op :type :ok, :value))))
 

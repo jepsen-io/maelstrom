@@ -70,7 +70,7 @@ class Node
 
   # Reply to a request with a response body
   def reply!(req, body)
-    body = body.merge in_reply_to: req[:body][:msg_id]
+    body = body.merge({in_reply_to: req[:body][:msg_id]})
     send! req[:src], body
   end
 
