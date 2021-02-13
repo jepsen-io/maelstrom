@@ -3,6 +3,7 @@
   selective packet loss, and long-lasting partitions."
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen.net :as net]
+            [maelstrom.net.journal :as j]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
@@ -15,18 +16,21 @@
   the longest packets will ordinarily be delayed.
 
       :queues      A map of receiver node ids to PriorityQueues
+      :journal     A mutable log for network messages
       :p-loss      The probability of any given message being lost
       :partitions  A map of receivers to collections of sources. If a
                    source/receiver pair exists, receiver will drop packets
                    from source."
   [latency log-send? log-recv?]
-  (atom {:queues {}
-         :log-send? log-send?
-         :log-recv? log-recv?
-         :latency latency
-         :p-loss 0
-         :partitions {}
-         :next-client-id 0}))
+  (atom {:queues          {}
+         :journal         (j/journal)
+         :log-send?       log-send?
+         :log-recv?       log-recv?
+         :latency         latency
+         :p-loss          0
+         :partitions      {}
+         :next-client-id  -1
+         :next-message-id (atom -1)}))
 
 (defn jepsen-adapter
   "A jepsen.net/Net which controls this network."
@@ -90,11 +94,21 @@
 
 (defn send!
   "Sends a message into the network. Message must contain :src and :dest keys,
-  both node IDs. Mutates and returns the network."
+  both node IDs. Generates an :id for the message. Mutates and returns the
+  network."
   [net message]
   (validate-msg net message)
-  (let [{:keys [log-send? p-loss latency]} @net]
+  (let [{:keys [log-send? p-loss journal latency next-message-id]} @net
+        ; Assign a new message ID for our internal bookkeeping
+        message (assoc message :id (swap! next-message-id inc))]
+
+    ; Journal
+    (j/log-send! journal message)
+
+    ; Log
     (when log-send? (info :send (pr-str message)))
+
+    ; Send
     (if (< (rand) p-loss)
       net ; whoops, lost ur packet
       (let [src  (:src message)
@@ -108,13 +122,24 @@
   "Receive a message for the given node. Returns the message, and mutates the
   network. Returns `nil` if no message available in timeout-ms milliseconds."
   [net node timeout-ms]
+  ; Fetch a message
   (when-let [envelope (.poll (queue-for net node)
                              timeout-ms TimeUnit/MILLISECONDS)]
     (let [{:keys [deadline message]} envelope
           dt (/ (- deadline (System/nanoTime)) 1e6)
-          {:keys [log-recv? partitions]} @net]
+          {:keys [log-recv? partitions journal]} @net]
+
       (when-not (some #{(:src message)} (get partitions node))
-        ; No partition
-        (do (when (pos? dt) (Thread/sleep dt))
+        ; No partition, OK, let's go!
+        (do (when (pos? dt)
+              ; This message isn't due for a bit; block until it's ready
+              (Thread/sleep dt))
+
+            ; Log to console
             (when log-recv? (info :recv (pr-str message)))
+
+            ; Journal
+            (j/log-recv! journal message)
+
+            ; And deliver!
             message)))))

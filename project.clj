@@ -9,5 +9,8 @@
                  [amalloy/ring-buffer "1.3.1"]
                  [cheshire "5.7.0"]
                  [byte-streams "0.2.2"]
+                 ; Reductions over journals
+                 [tesser.core "1.0.3"]
+                 [tesser.math "1.0.3"]
                  ; For range sets
                  [com.google.guava/guava "30.1-jre"]])

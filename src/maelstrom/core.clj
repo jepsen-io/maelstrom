@@ -7,7 +7,9 @@
                        [net :as net]
                        [nemesis :as nemesis]
                        [process :as process]]
-            [maelstrom.workload [echo :as echo]
+            [maelstrom.net.journal :as net.journal]
+            [maelstrom.workload [broadcast :as broadcast]
+                                [echo :as echo]
                                 [g-set :as g-set]
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]]
@@ -17,12 +19,13 @@
                     [generator :as gen]
                     [store :as store]
                     [tests :as tests]
-                    [util :as util :refer [timeout]]]
+                    [util :as util :refer [timeout parse-long]]]
             [jepsen.checker.timeline :as timeline]))
 
 (def workloads
   "A map of workload names to functions which construct workload maps."
-  {:echo        echo/workload
+  {:broadcast   broadcast/workload
+   :echo        echo/workload
    :g-set       g-set/workload
    :pn-counter  pn-counter/workload
    :lin-kv      lin-kv/workload})
@@ -34,12 +37,16 @@
 (defn maelstrom-test
   "Construct a Jepsen test from parsed CLI options"
   [{:keys [bin args nodes rate] :as opts}]
-  (let [net   (net/net (:latency opts)
+  (let [nodes (if-let [nc (:node-count opts)]
+                (mapv (partial str "n") (map inc (range nc)))
+                (:nodes opts))
+        net   (net/net (:latency opts)
                        (:log-net-send opts)
                        (:log-net-recv opts))
         db            (db/db {:net net, :bin bin, :args args})
         workload-name (:workload opts)
-        workload      ((workloads workload-name) (assoc opts :net net))
+        workload      ((workloads workload-name)
+                       (assoc opts :nodes nodes, :net net))
         nemesis-package (nemesis/package {:db       db
                                           :interval (:nemesis-interval opts)
                                           :faults   (:nemesis opts)})
@@ -60,15 +67,18 @@
            opts
            workload
            {:name    (str (name workload-name))
+            :nodes   nodes
             :ssh     {:dummy? true}
             :db      db
             :nemesis (:nemesis nemesis-package)
             :net     (net/jepsen-adapter net)
+            :net-journal (:journal @net)
             :checker (checker/compose
                        {:perf       (checker/perf)
                         :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (checker/stats)
+                        :net        (net.journal/checker)
                         :workload   (:checker workload)})
             :generator generator
             :pure-generators true})))
@@ -79,9 +89,8 @@
 
    [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
     :default 0
-    :parse-fn #(Long/parseLong %)
+    :parse-fn parse-long
     :validate [(complement neg?) "Must be non-negative"]]
-
 
    [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
@@ -91,6 +100,11 @@
 
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
     :default false]
+
+   [nil "--node-count NUM" "How many nodes to run. Overrides --nodes, if given."
+    :default nil
+    :parse-fn parse-long
+    :validate? [pos? "Must be positive."]]
 
    [nil "--nemesis FAULTS" "A comma-separated list of faults to inject."
     :default #{}
