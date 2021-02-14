@@ -84,6 +84,25 @@
             :generator generator
             :pure-generators true})))
 
+(def demos
+  "A series of partial test options used to run demonstrations."
+  [{:workload :echo,        :bin "demo/ruby/echo.rb"}
+   {:workload :echo,        :bin "demo/ruby/echo_full.rb"}
+   {:workload :broadcast,   :bin "demo/ruby/broadcast.rb"}
+   {:workload :g-set,       :bin "demo/ruby/g_set.rb"}
+   {:workload :pn-counter,  :bin "demo/ruby/pn_counter.rb"}
+   {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}])
+
+(defn demo-tests
+  "Takes CLI options and constructs a sequence of tests to run which
+  demonstrate various demo programs on assorted workloads. Useful for
+  self-tests."
+  [opts]
+  (for [[workload bin] demos]
+    (maelstrom-test (assoc opts
+                           :workload workload
+                           :bin bin))))
+
 (def opt-spec
   "Extra options for the CLI"
   [[nil "--bin FILE"        "Path to binary which runs a node"]
@@ -144,6 +163,11 @@
                                          :opt-spec  opt-spec
                                          :opt-fn    opt-fn})
                    (cli/serve-cmd)
+                   ; This is basically a modified test-all command
+                   {"demo" (get (cli/test-all-cmd
+                                  {:opt-spec opt-spec
+                                   :tests-fn demo-tests})
+                                "test-all")}
                    {"doc" {:opt-spec []
                            :run (fn [opts]
                                   (c/print-registry))}})
