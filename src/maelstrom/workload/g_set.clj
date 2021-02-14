@@ -1,12 +1,29 @@
 (ns maelstrom.workload.g-set
   "A grow-only set workload: clients add elements to a set, and read the
   current value of the set."
+  (:refer-clojure :exclude [read])
   (:require [maelstrom [client :as c]
                        [net :as net]]
             [jepsen [checker :as checker]
                     [client :as client]
                     [generator :as gen]]
+            [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
+
+(c/defrpc add!
+  "Requests that a server add a single element to the set. Acknowledged by an
+  `add_ok` message."
+  {:type    (s/eq "add")
+   :element s/Any}
+  {:type    (s/eq "add_ok")})
+
+(c/defrpc read
+  "Requests the current set of all elements. Servers respond with a message
+  containing an `elements` key, whose `value` is a JSON array of added
+  elements."
+  {:type (s/eq "read")}
+  {:type (s/eq "read_ok")
+   :value [s/Any]})
 
 (defn client
   ([net]
@@ -20,12 +37,12 @@
 
      (invoke! [_ test op]
        (case (:f op)
-         :add (do (c/rpc! conn node {:type    :add
-                                     :element (:value op)})
+         :add (do (add! conn node {:element (:value op)})
                   (assoc op :type :ok))
 
-         :read (assoc op :type :ok
-                      :value (:value (c/rpc! conn node {:type :read})))))
+         :read (assoc op
+                      :type :ok
+                      :value (:value (read conn node {})))))
 
      (teardown! [_ test])
 

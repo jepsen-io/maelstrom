@@ -33,7 +33,7 @@ class EchoServer
         # Send echoes back
         when "echo"
           STDERR << "Echoing #{body}\n"
-          reply! req, {echo: "not-right"}
+          reply! req, {type: "echo_ok", echo: body[:echo]}
       end
     end
   end

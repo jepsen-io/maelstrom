@@ -8,10 +8,26 @@
                     [client :as client]
                     [generator :as gen]]
             [knossos.op :as op]
+            [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (com.google.common.collect Range
                                       RangeSet
                                       TreeRangeSet)))
+
+(c/defrpc add!
+  "Adds a (potentially negative) integer, called `delta`, to the counter.
+  Servers should respond with an `add_ok` message."
+  {:type  (s/eq "add")
+   :delta s/Int}
+  {:type  (s/eq "add_ok")})
+
+(c/defrpc read
+  "Reads the current value of the counter. Servers respond with a `read_ok`
+  message containing a `value`, which should be the sum of all (known) added
+  deltas."
+  {:type (s/eq "read")}
+  {:type (s/eq "read_ok")
+   :value s/Int})
 
 (defn client
   ([net]
@@ -25,11 +41,10 @@
 
      (invoke! [_ test op]
        (case (:f op)
-         :add (do (c/rpc! conn node {:type  :add
-                                     :delta (:value op)})
+         :add (do (add! conn node {:delta (:value op)})
                   (assoc op :type :ok))
 
-         :read (->> (c/rpc! conn node {:type :read})
+         :read (->> (read conn node {})
                     :value
                     long
                     (assoc op :type :ok, :value))))

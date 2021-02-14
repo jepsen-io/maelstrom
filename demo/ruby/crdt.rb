@@ -23,7 +23,7 @@ class CRDT
     @value = value
 
     @node.on "read" do |msg|
-      @node.reply! msg, value: @value.read
+      @node.reply! msg, type: "read_ok", value: @value.read
     end
 
     # Merge another node's value into our own

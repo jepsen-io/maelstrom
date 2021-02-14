@@ -98,10 +98,8 @@
   demonstrate various demo programs on assorted workloads. Useful for
   self-tests."
   [opts]
-  (for [[workload bin] demos]
-    (maelstrom-test (assoc opts
-                           :workload workload
-                           :bin bin))))
+  (for [demo demos]
+    (maelstrom-test (merge opts demo))))
 
 (def opt-spec
   "Extra options for the CLI"

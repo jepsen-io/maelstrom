@@ -5,7 +5,8 @@
   (:require [clojure.tools.logging :refer [info warn]]
             [clojure.pprint :refer [pprint]]
             [maelstrom [net :as net]
-                       [util :as u]] 
+                       [util :as u]]
+            [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
@@ -54,7 +55,7 @@
   "Sends a message over the given client. Fills in the message's :src and
   [:body :msg_id]"
   [client msg]
-  (let [msg-id (or (:msg-id (:body msg)) (msg-id! client))
+  (let [msg-id (or (:msg_id (:body msg)) (msg-id! client))
         net    (:net client)
         ok?    (compare-and-set! (:waiting-for client) nil msg-id)
         msg    (-> msg
@@ -161,7 +162,7 @@
   fails, explaining why the message failed validation. Returns message
   otherwise. Type is either :send or :recv, and is used to construct an
   appropriate type and error message."
-  [type schema checker body]
+  [type schema checker dest req body]
   (when-let [errs (checker body)]
     (throw+ {:type     (case type
                          :send :malformed-rpc-request
@@ -171,14 +172,34 @@
             nil
             (str "Malformed RPC "
                  (case type
-                   :send "request"
-                   :recv "response")
-                 ": expected a message body like\n\n"
+                   :send "request. Maelstrom should have constructed a message body like:"
+                   :recv (str "response. Maelstrom sent node " dest
+                              " the following request:\n\n"
+                              (with-out-str (pprint req))
+                              "\nAnd expected a response of the form:"))
+                 "\n\n"
                  (with-out-str (pprint schema))
-                 "\n... but received\n\n"
+                 "\n... but instead " (case type
+                                        :send "sent"
+                                        :recv "received")
+                 "\n\n"
                  (with-out-str (pprint body))
-                 "\nSpecifically, this is invalid because:\n\n"
+                 "\nThis is malformed because:\n\n"
                  (with-out-str (pprint errs))))))
+
+(defn send-schema
+  "Takes a partial schema for an RPC request, and enhances it to include a
+  :msg_id field."
+  [schema]
+  (assoc schema :msg_id s/Int))
+
+(defn recv-schema
+  "Takes a partial schema for an RPC response, and enhances it to include a
+  :msg_id optional field, and an in_reply_to field."
+  [schema]
+  (assoc schema
+         (s/optional-key :msg_id) s/Int
+         :in_reply_to s/Int))
 
 (defmacro defrpc
   "Defines a typed RPC call: a function called `fname`, which takes arguments
@@ -187,10 +208,8 @@
   checkers--they're expensive to validate ad-hoc."
   [fname docstring send-schema recv-schema]
   `(let [; Enhance schemas to include message ids and reply_to fields.
-         send-schema#  (assoc ~send-schema
-                              :msg_id s/Int)
-         recv-schema#  (assoc ~recv-schema
-                              :in_reply_to s/Int)
+         send-schema#  (send-schema ~send-schema)
+         recv-schema#  (recv-schema ~recv-schema)
          ; Construct persistent checkers
          send-checker# (s/checker send-schema#)
          recv-checker# (s/checker recv-schema#)
@@ -207,17 +226,21 @@
              :send send-schema#
              :recv recv-schema#})
 
-     (defn ~fname [client# dest# body#]
-       ; Generate a message ID here, so it passes the schema checker. This is a
-       ; little duplicated effort, but it means that schemas say *exactly* what
-       ; bodies should be, and I think that will help implementers.
-       (let [body# (assoc body#
-                          :type   message-type#
-                          :msg_id (msg-id! client#))]
-         ; Validate request
-         (check-body :send send-schema# send-checker# body#)
-         ; Make RPC call
-         (let [res# (rpc! client# dest# body#)]
-           ; Validate response
-           (check-body :recv recv-schema# recv-checker# res#)
-           res#)))))
+     (defn ~fname
+       ([client# dest# body#]
+        (~fname client# dest# body# default-timeout))
+
+       ([client# dest# body# timeout#]
+        ; Generate a message ID here, so it passes the schema checker. This is
+        ; a little duplicated effort, but it means that schemas say *exactly*
+        ; what bodies should be, and I think that will help implementers.
+        (let [body# (assoc body#
+                           :type   message-type#
+                           :msg_id (msg-id! client#))]
+          ; Validate request
+          (check-body :send send-schema# send-checker# dest# body# body#)
+          ; Make RPC call
+          (let [res# (rpc! client# dest# body# timeout#)]
+            ; Validate response
+            (check-body :recv recv-schema# recv-checker# dest# body# res#)
+            res#))))))

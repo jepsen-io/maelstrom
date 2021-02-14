@@ -1,17 +1,47 @@
 (ns maelstrom.workload.lin-kv
   "A workload for a linearizable key-value store."
+  (:refer-clojure :exclude [read])
   (:require [maelstrom [client :as c]
                        [net :as net]]
             [jepsen [client :as client]
                     [generator :as gen]
                     [independent :as independent]]
-            [jepsen.tests.linearizable-register :as lin-reg]))
+            [jepsen.tests.linearizable-register :as lin-reg]
+            [schema.core :as s]))
 
 (def errors
   "KV-specific error codes"
   {20 {:definite? true    :name :key-does-not-exist}
    21 {:definite? true    :name :key-already-exists}
    22 {:definite? true    :name :precondition-failed}})
+
+(c/defrpc read
+  "Reads the current value of a single key. Clients send a `read` request with
+  the key they'd like to observe, and expect a response with the current
+  `value` of that key."
+  {:type  (s/eq "read")
+   :key   s/Any}
+  {:type  (s/eq "read_ok")
+   :value s/Any})
+
+(c/defrpc write!
+  "Blindly overwrites the value of a key. Creates keys if they do not presently
+  exist. Servers should respond with a `read_ok` response once the write is
+  complete."
+  {:type (s/eq "write")
+   :key  s/Any
+   :value s/Any}
+  {:type (s/eq "write_ok")})
+
+(c/defrpc cas!
+  "Atomically compare-and-sets a single key: if the value of `key` is currently
+  `from`, sets it to `to`. Returns error 20 if the key doesn't exist, and 22 if
+  the `from` value doesn't match."
+  {:type (s/eq "cas")
+   :key  s/Any
+   :from s/Any
+   :to   s/Any}
+  {:type (s/eq "cas_ok")})
 
 (defn client
   "Construct a linearizable key-value client for the given network"
@@ -28,22 +58,17 @@
        (let [[k v]   (:value op)
              timeout (max (* 10 (:latency test)) 1000)]
            (case (:f op)
-             :read (let [res (c/rpc! conn node {:type "read", :key k}
-                                     timeout)
+             :read (let [res (read conn node {:key k} timeout)
                          v (:value res)]
                      (assoc op
-                            :type :ok
+                            :type  :ok
                             :value (independent/tuple k v)))
 
-             :write (let [res (c/rpc! conn node
-                                      {:type "write", :key k, :value v}
-                                      timeout)]
+             :write (let [res (write! conn node {:key k, :value v} timeout)]
                       (assoc op :type :ok))
 
              :cas (let [[v v'] v
-                        res (c/rpc! conn node
-                                    {:type "cas", :key k, :from v, :to v'}
-                                    timeout)]
+                        res (cas! conn node {:key k, :from v, :to v'} timeout)]
                     (assoc op :type :ok)))))
 
      (teardown! [_ test])

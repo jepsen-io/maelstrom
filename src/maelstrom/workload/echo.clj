@@ -9,7 +9,17 @@
                     [independent :as independent]]
             [jepsen.tests.linearizable-register :as lin-reg]
             [knossos.history :as history]
+            [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
+
+(c/defrpc echo!
+  "Clients send `echo` messages to servers with an `echo` field containing an
+  arbitrary payload they'd like to have sent back. Servers should respond with
+  `echo_ok` messages containing that same payload."
+  {:type (s/eq "echo")
+   :echo s/Any}
+  {:type (s/eq "echo_ok")
+   :echo s/Any})
 
 (defn client
   ([net]
@@ -22,7 +32,7 @@
      (setup! [this test])
 
      (invoke! [_ test op]
-       (try+ (let [res (c/rpc! conn node {:type :echo, :echo (:value op)})]
+       (try+ (let [res (echo! conn node {:echo (:value op)})]
                (assoc op :type :ok, :value res))))
 
      (teardown! [_ test])
@@ -40,10 +50,6 @@
                           (cond ; Only take invoke/complete pairs
                                 (not= (:type invoke) :invoke)
                                 nil
-
-                                (not= "echo" (:type (:value complete)))
-                                ["Expected a message with :type \"echo\", but received"
-                                 (:value complete)]
 
                                 (not= (:value invoke)
                                       (:echo (:value complete)))

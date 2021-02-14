@@ -11,7 +11,7 @@ class GSetNode
     @set = Set.new
 
     @node.on "read" do |msg|
-      @node.reply! msg, {value: @set.to_a}
+      @node.reply! msg, {type: "read_ok", value: @set.to_a}
     end
 
     @node.on "add" do |msg|
