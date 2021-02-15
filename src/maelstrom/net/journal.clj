@@ -94,6 +94,7 @@
       (let [journal (-> test :net-journal deref)
             stats   (t/tesser (tu/chunk-vec 65536 journal) stats)]
         ; Generate a plot
-        (viz/plot! journal (store/path! test "messages.png"))
+        (viz/plot!      journal (store/path! test "messages.png"))
+        (viz/plot-dali! journal (store/path! test "messages.svg"))
         {:stats  stats
          :valid? true}))))

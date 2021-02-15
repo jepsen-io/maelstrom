@@ -18,4 +18,5 @@
                  [prismatic/schema "1.1.12"]
                  ; Rendering lamport diagrams
                  [rhizome "0.2.9"]
+                 [dali "1.0.2"]
                  ])
