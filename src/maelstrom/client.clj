@@ -147,7 +147,7 @@
 (defn unindent
   "Strips leading whitespace from all lines in a string."
   [s]
-  (str/replace s #"(^|\n)\s+" "$1"))
+  (str/replace s #"(^|\n)[ \t]+" "$1"))
 
 (def workloads-preamble
   "A *workload* specifies the semantics of a distributed system: what
@@ -201,9 +201,13 @@
          (println "### RPC:" (str/capitalize (:name rpc)) "\n")
          (println (unindent (:doc rpc)) "\n")
          (println "Request:\n")
+         (println "```clj")
          (pprint (:send rpc))
+         (println "```")
          (println "\nResponse:\n")
+         (println "```clj")
          (pprint (:recv rpc))
+         (println "```")
          (println "\n"))
 
        (println)))))
