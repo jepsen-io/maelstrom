@@ -3,7 +3,8 @@
   receiving messages, performing RPC calls, and throwing exceptions from
   errors."
   (:require [clojure.tools.logging :refer [info warn]]
-            [clojure.pprint :refer [pprint]]
+            [clojure [pprint :refer [pprint]]
+                     [string :as str]]
             [maelstrom [net :as net]
                        [util :as u]]
             [schema.core :as s]
@@ -143,19 +144,31 @@
   generate documentation!"
   (atom []))
 
+(defn unindent
+  "Strips leading whitespace from all lines in a string."
+  [s]
+  (str/replace s #"(^|\n)\s+" "$1"))
+
 (defn print-registry
   "Prints out the RPC registry to the console, for help messages."
   ([]
    (print-registry @rpc-registry))
   ([rpcs]
-   (doseq [rpc rpcs]
-     (println "\n")
-     (println "##" (:name rpc) "\n")
-     (println (:doc rpc) "\n")
-     (println "Request:\n")
-     (pprint (:send rpc))
-     (println "\nResponse:\n")
-     (pprint (:recv rpc)))))
+   (doseq [[ns rpcs] (group-by :ns rpcs)]
+     (println "# Workload:" (ns-name ns) "\n")
+
+     (println (unindent (:doc (meta ns))) "\n")
+
+     (doseq [rpc rpcs]
+       (println "## RPC:" (str/capitalize (:name rpc)) "\n")
+       (println (unindent (:doc rpc)) "\n")
+       (println "Request:\n")
+       (pprint (:send rpc))
+       (println "\nResponse:\n")
+       (pprint (:recv rpc))
+       (println "\n"))
+
+     (println "\n"))))
 
 (defn check-body
   "Uses a schema checker to validate `data`. Throws an exception if validation
@@ -220,7 +233,7 @@
 
      ; Record RPC spec in registry
      (swap! rpc-registry conj
-            {:ns   (ns-name *ns*)
+            {:ns   *ns*
              :name (quote ~fname)
              :doc  ~docstring
              :send send-schema#
