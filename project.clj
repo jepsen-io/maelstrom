@@ -16,4 +16,6 @@
                  [com.google.guava/guava "30.1-jre"]
                  ; Input validation
                  [prismatic/schema "1.1.12"]
+                 ; Rendering lamport diagrams
+                 [rhizome "0.2.9"]
                  ])

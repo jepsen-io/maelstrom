@@ -15,7 +15,9 @@
   latency distributions, etc."
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen [checker :as checker]
+                    [store :as store]
                     [util :as util :refer [linear-time-nanos]]]
+            [maelstrom.net.viz :as viz]
             [tesser [core :as t]
                     [math :as tm]
                     [utils :as tu]]))
@@ -91,5 +93,7 @@
     (check [this test history opts]
       (let [journal (-> test :net-journal deref)
             stats   (t/tesser (tu/chunk-vec 65536 journal) stats)]
+        ; Generate a plot
+        (viz/plot! journal (store/path! test "messages.png"))
         {:stats  stats
          :valid? true}))))
