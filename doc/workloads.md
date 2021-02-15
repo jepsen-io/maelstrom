@@ -1,10 +1,36 @@
-# Workload: maelstrom.workload.broadcast 
+# Workloads
+
+A *workload* specifies the semantics of a distributed system: what
+operations are performed, how clients submit requests to the system, what
+those requests mean, what kind of responses are expected, which errors can
+occur, and how to check the resulting history for safety.
+For instance, the *broadcast* workload says that clients submit `broadcast`
+messages to arbitrary servers, and can send a `read` request to obtain the
+set of all broadcasted messages. Clients mix reads and broadcast operations
+throughout the history, and at the end of the test, perform a final read
+after allowing a brief period for convergence. To check broadcast histories,
+Maelstrom looks to see how long it took for messages to be broadcast, and
+whether any were lost.
+This is a reference document, automatically generated from Maelstrom's source
+code by running `lein run doc`. For each workload, it describes the general
+semantics of that workload, what errors are allowed, and the structure of RPC
+messages that you'll need to handle. 
+
+## Table of Contents
+
+- [Broadcast](#workload-broadcast)
+- [Echo](#workload-echo)
+- [G-set](#workload-g-set)
+- [Lin-kv](#workload-lin-kv)
+- [Pn-counter](#workload-pn-counter)
+
+## Workload: Broadcast 
 
 A broadcast system. Essentially a test of eventually-consistent set
 addition, but also provides an initial `topology` message to the cluster with
 a set of neighbors for each node to use. 
 
-## RPC: Topology! 
+### RPC: Topology! 
 
 A topology message is sent at the start of the test, after initialization,
 and informs the node of an optional network topology to use for broadcast.
@@ -23,7 +49,7 @@ Response:
  :in_reply_to Int}
 
 
-## RPC: Broadcast! 
+### RPC: Broadcast! 
 
 Sends a single message into the broadcast system, and requests that it be
 broadcast to everyone. Nodes respond with a simple acknowledgement message. 
@@ -39,7 +65,7 @@ Response:
  :in_reply_to Int}
 
 
-## RPC: Read 
+### RPC: Read 
 
 Requests all messages present on a node. 
 
@@ -56,13 +82,12 @@ Response:
 
 
 
-
-# Workload: maelstrom.workload.echo 
+## Workload: Echo 
 
 A simple echo workload: sends a message, and expects to get that same
 message back. 
 
-## RPC: Echo! 
+### RPC: Echo! 
 
 Clients send `echo` messages to servers with an `echo` field containing an
 arbitrary payload they'd like to have sent back. Servers should respond with
@@ -81,13 +106,12 @@ Response:
 
 
 
-
-# Workload: maelstrom.workload.g-set 
+## Workload: G-set 
 
 A grow-only set workload: clients add elements to a set, and read the
 current value of the set. 
 
-## RPC: Add! 
+### RPC: Add! 
 
 Requests that a server add a single element to the set. Acknowledged by an
 `add_ok` message. 
@@ -103,7 +127,7 @@ Response:
  :in_reply_to Int}
 
 
-## RPC: Read 
+### RPC: Read 
 
 Requests the current set of all elements. Servers respond with a message
 containing an `elements` key, whose `value` is a JSON array of added
@@ -122,54 +146,11 @@ Response:
 
 
 
-
-# Workload: maelstrom.workload.pn-counter 
-
-An eventually-consistent counter which supports increments and decrements.
-Validates that the final read on each node has a value which is the sum of
-all known (or possible) increments and decrements. 
-
-## RPC: Add! 
-
-Adds a (potentially negative) integer, called `delta`, to the counter.
-Servers should respond with an `add_ok` message. 
-
-Request:
-
-{:type (eq "add"), :delta Int, :msg_id Int}
-
-Response:
-
-{:type (eq "add_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
-
-
-## RPC: Read 
-
-Reads the current value of the counter. Servers respond with a `read_ok`
-message containing a `value`, which should be the sum of all (known) added
-deltas. 
-
-Request:
-
-{:type (eq "read"), :msg_id Int}
-
-Response:
-
-{:type (eq "read_ok"),
- :value Int,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
-
-
-
-
-# Workload: maelstrom.workload.lin-kv 
+## Workload: Lin-kv 
 
 A workload for a linearizable key-value store. 
 
-## RPC: Read 
+### RPC: Read 
 
 Reads the current value of a single key. Clients send a `read` request with
 the key they'd like to observe, and expect a response with the current
@@ -187,7 +168,7 @@ Response:
  :in_reply_to Int}
 
 
-## RPC: Write! 
+### RPC: Write! 
 
 Blindly overwrites the value of a key. Creates keys if they do not presently
 exist. Servers should respond with a `read_ok` response once the write is
@@ -204,7 +185,7 @@ Response:
  :in_reply_to Int}
 
 
-## RPC: Cas! 
+### RPC: Cas! 
 
 Atomically compare-and-sets a single key: if the value of `key` is currently
 `from`, sets it to `to`. Returns error 20 if the key doesn't exist, and 22 if
@@ -220,6 +201,46 @@ Response:
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 
+
+
+## Workload: Pn-counter 
+
+An eventually-consistent counter which supports increments and decrements.
+Validates that the final read on each node has a value which is the sum of
+all known (or possible) increments and decrements. 
+
+### RPC: Add! 
+
+Adds a (potentially negative) integer, called `delta`, to the counter.
+Servers should respond with an `add_ok` message. 
+
+Request:
+
+{:type (eq "add"), :delta Int, :msg_id Int}
+
+Response:
+
+{:type (eq "add_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+
+
+### RPC: Read 
+
+Reads the current value of the counter. Servers respond with a `read_ok`
+message containing a `value`, which should be the sum of all (known) added
+deltas. 
+
+Request:
+
+{:type (eq "read"), :msg_id Int}
+
+Response:
+
+{:type (eq "read_ok"),
+ :value Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 
 
 

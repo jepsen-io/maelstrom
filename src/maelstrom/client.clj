@@ -149,26 +149,64 @@
   [s]
   (str/replace s #"(^|\n)\s+" "$1"))
 
+(def workloads-preamble
+  "A *workload* specifies the semantics of a distributed system: what
+  operations are performed, how clients submit requests to the system, what
+  those requests mean, what kind of responses are expected, which errors can
+  occur, and how to check the resulting history for safety.
+
+  For instance, the *broadcast* workload says that clients submit `broadcast`
+  messages to arbitrary servers, and can send a `read` request to obtain the
+  set of all broadcasted messages. Clients mix reads and broadcast operations
+  throughout the history, and at the end of the test, perform a final read
+  after allowing a brief period for convergence. To check broadcast histories,
+  Maelstrom looks to see how long it took for messages to be broadcast, and
+  whether any were lost.
+
+  This is a reference document, automatically generated from Maelstrom's source
+  code by running `lein run doc`. For each workload, it describes the general
+  semantics of that workload, what errors are allowed, and the structure of RPC
+  messages that you'll need to handle.")
+
 (defn print-registry
   "Prints out the RPC registry to the console, for help messages."
   ([]
    (print-registry @rpc-registry))
   ([rpcs]
-   (doseq [[ns rpcs] (group-by :ns rpcs)]
-     (println "# Workload:" (ns-name ns) "\n")
+   ; Group RPCs by namespace
+   (let [ns->rpcs (->> rpcs
+                       (group-by (fn [rpc]
+                                   (-> rpc
+                                       :ns
+                                       ns-name
+                                       name
+                                       (str/split #"\.")
+                                       last)))
+                       (sort-by key))]
 
-     (println (unindent (:doc (meta ns))) "\n")
+     (println "# Workloads\n")
+     (println (unindent workloads-preamble) "\n")
 
-     (doseq [rpc rpcs]
-       (println "## RPC:" (str/capitalize (:name rpc)) "\n")
-       (println (unindent (:doc rpc)) "\n")
-       (println "Request:\n")
-       (pprint (:send rpc))
-       (println "\nResponse:\n")
-       (pprint (:recv rpc))
-       (println "\n"))
+     (println "## Table of Contents\n")
+     (doseq [[ns rpcs] ns->rpcs]
+       (println (str "- [" (str/capitalize ns) "](#workload-" ns ")")))
+     (println)
 
-     (println "\n"))))
+     (doseq [[ns rpcs] ns->rpcs]
+       (println "## Workload:" (str/capitalize ns) "\n")
+
+       (println (unindent (:doc (meta (:ns (first rpcs))))) "\n")
+
+       (doseq [rpc rpcs]
+         (println "### RPC:" (str/capitalize (:name rpc)) "\n")
+         (println (unindent (:doc rpc)) "\n")
+         (println "Request:\n")
+         (pprint (:send rpc))
+         (println "\nResponse:\n")
+         (pprint (:recv rpc))
+         (println "\n"))
+
+       (println)))))
 
 (defn check-body
   "Uses a schema checker to validate `data`. Throws an exception if validation
