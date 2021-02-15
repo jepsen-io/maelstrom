@@ -92,18 +92,19 @@
         dot (rd/graph->dot dot-nodes
                            edges
 
-                           :options {:rankdir "TD"
+                           :options {:rankdir "LR"
                                      :splines false
                                      :outputorder "nodesfirst"}
 
                            :node->cluster
                            (fn [node]
-                             (if (zero? (:step node))
-                               "process_names"))
+;                             (if (zero? (:step node))
+;                               "process_names")
+                             (:node node))
 
                            :cluster->descriptor
                            (fn [cluster]
-                             {:rankdir  "TD"
+                             {:rank     "same"
                               :style    "invis"})
 
                            :node->descriptor
@@ -124,7 +125,7 @@
                                (if edge
                                  ; A message
                                  {:constraint false
-                                  :labelfloat true
+                                  ; :labelfloat true
                                   ;:weight 3
                                   :tooltip (pr-str (:body (:message edge)))
                                   :label   (:type (:body (:message edge)))}
