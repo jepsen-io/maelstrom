@@ -7,16 +7,18 @@
             [dali [prefab :as df]
                   [io :as dio]
                   [syntax :as ds]]
+            [maelstrom [util :as u]]
             [rhizome [dot :as rd]
                      [viz :as rv]]))
 
 (defn all-nodes
-  "Takes a journal and returns the set of all nodes involved in it."
+  "Takes a journal and returns the collection of all nodes involved in it."
   [journal]
   (->> journal
        (map :message)
        (mapcat (juxt :src :dest))
-       (into (sorted-set))))
+       distinct
+       u/sort-clients))
 
 (defn init-nodes
   "Takes a set of node ids and generates initial dot nodes for them."
@@ -156,6 +158,34 @@
   [y-step step]
   (float (* y-step (+ 1.5 step))))
 
+(defn message->color
+  "Takes a message event and returns what color to use in drawing it."
+  [{:keys [from to message]}]
+  (cond (= "error" (:type (:body message)))
+        "#FF1E90"
+
+        (u/involves-client? message)
+        "#81BFFC"
+
+        :else
+        "#000"))
+
+(defn norm
+  "Cartesian distance between two points [x0 y0] [x1 y1]"
+  [[x0 y0] [x1 y1]]
+  (Math/sqrt (+ (Math/pow (- x1 x0) 2)
+                (Math/pow (- y1 y0) 2))))
+
+(defn angle
+  "Angle of the vector defined by two points."
+  [[x0 y0] [x1 y1]]
+  (Math/atan2 (- y1 y0) (- x1 x0)))
+
+(defn rad->deg
+  "Convert radians to degrees"
+  [rad]
+  (-> rad (/ 2 Math/PI) (* 360)))
+
 (defn message->dali-line+label
   "Converts a message to a Dali line and label"
   [width y-step node-index message]
@@ -168,14 +198,33 @@
         y1 (y y-step (:step to))
         xmid (/ (+ x0 x1) 2)
         ymid (/ (+ y0 y1) 2)
+        ; How long is the line gonna be? We draw this horizontally, then rotate
+        ; it into place with the text.
+        length (norm [x0 y0] [x1 y1])
+        ; How should we rotate it?
+        angle  (rad->deg (angle [x0 y0] [x1 y1]))
+        ; Are we flipping around to point left?
+        left?  (not (< -90 angle 90))
+
         label [:text {:text-anchor "middle"
-                      :x xmid
-                      :y (- ymid (/ y-step 5))}
+                      :x (/ length 2)
+                      ; Should probably specify a font size and work this out
+                      ; properly
+                      :y (- (/ y-step 4))
+                      ; Text will be upside down, so we flip it here
+                      :transform (when left?
+                                   (str "rotate(180 "(/ length 2) " 0)"))}
                (:type (:body m))]]
-    [; Line
-     [:polyline {:points (str x0 "," y0 " " x1 "," y1)
-                 :stroke-width 3
-                 :stroke "#000"
+    ; Recall that transforms are applied last to first, because they expand to
+    ; effectively nested transforms
+    [:g {:transform (str
+                      "translate(" x0 " " y0 ") "
+                      "rotate(" angle ") "
+                      )}
+     ; Line
+     [:polyline {:points (str "0,0 " length ",0")
+                 :stroke (message->color message)
+                 :fill   (message->color message)
                  :marker-end "url(#arrowhead)"}
       [:title (str (:src m) " → " (:dest m)
                    " " (pr-str (:body m)))]]
@@ -212,13 +261,13 @@
                         nodes)
         message-lines (->> journal
                            messages
-                           (mapcat (partial message->dali-line+label
-                                            width
-                                            y-step
-                                            node-index)))
+                           (map (partial message->dali-line+label
+                                         width
+                                         y-step
+                                         node-index)))
         doc   [:dali/page
                [:defs
-                (ds/css (str "polyline {stroke: black; stroke-width: 1;}"))
+                (ds/css (str "polyline {stroke-width: 2;}"))
                 (df/sharp-arrow-marker :sharp {:scale 1})
                 [:filter {:id "glow"}
                  [:feGaussianBlur {:stdDeviation "1.5"
@@ -231,14 +280,14 @@
                   [:feMergeNode {:in "glow"}]
                   [:feMergeNode {:in "glow"}]]]
                 [:marker {:id "arrowhead"
-                          :markerWidth 10
-                          :markerHeight 7
-                          :refX 10
-                          :refY 3.5
+                          :markerWidth 5
+                          :markerHeight 3.5
+                          :refX 5
+                          :refY 1.75
                           :orient "auto"}
-                 [:polygon {:points "0 0, 10 3.5, 0 7"}]]]
+                 [:polygon {:points "0 0, 5 1.75, 0 3.5"}]]]
                node-labels
                node-lines
                message-lines]]
-    (pprint doc)
+    ;(pprint doc)
     (dio/render-svg doc filename)))

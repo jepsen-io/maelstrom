@@ -17,6 +17,7 @@
             [jepsen [checker :as checker]
                     [store :as store]
                     [util :as util :refer [linear-time-nanos]]]
+            [maelstrom.util :as u]
             [maelstrom.net.viz :as viz]
             [tesser [core :as t]
                     [math :as tm]
@@ -41,6 +42,21 @@
                        :time    (linear-time-nanos)
                        :message message}))
 
+(defn involves-client?
+  "Takes an event and returns true iff it was sent to or received from a
+  client."
+  [{:keys [message]}]
+  (u/involves-client? message))
+
+(defn without-init
+  "Strips out initialization messages from the journal, so we can focus on the
+  algorithm itself."
+  [journal]
+  (->> journal
+       (remove (fn [event]
+                 (contains? #{"init" "init_ok"}
+                            (:type (:body (:message event))))))))
+
 ;; Analysis
 
 (def sends
@@ -50,18 +66,6 @@
 (def recvs
   "Fold which filters a journal to just receives."
   (t/filter (comp #{:recv} :type)))
-
-(defn client?
-  "Is a given node id a client?"
-  [node-id]
-  (re-find #"^c" node-id))
-
-(defn involves-client?
-  "Takes an event and returns true iff it was sent to or received from a
-  client."
-  [{:keys [message]}]
-  (or (client? (:src message))
-      (client? (:dest message))))
 
 (def clients
   "Fold which filters a journal to just messages to/from clients"
@@ -94,7 +98,7 @@
       (let [journal (-> test :net-journal deref)
             stats   (t/tesser (tu/chunk-vec 65536 journal) stats)]
         ; Generate a plot
-        (viz/plot!      journal (store/path! test "messages.png"))
-        (viz/plot-dali! journal (store/path! test "messages.svg"))
+        (viz/plot-dali! (without-init journal)
+                        (store/path! test "messages.svg"))
         {:stats  stats
          :valid? true}))))
