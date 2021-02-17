@@ -35,10 +35,16 @@ but in every test, you'll find:
   indicates `fail`ed operations. Helpful in understanding the concurrency
   structure of the test, as visible to Maelstrom.
 
-- `latency-raw.png`: shows the latency of each Maelstrom operation, plotted
+- `latency-raw.png`: Shows the latency of each Maelstrom operation, plotted
   over time by the time the request began. Color indicates whether the
   operation completed with `ok`, `info`, or `fail`. Shape indicates the `f`
   function for that operation: e.g. a `read`, `write`, `cas`, etc.
+
+- `latency-quantiles.png`: The same latency timeseries, binned by time,
+  intervals and projected to quantiles 0.5, 0.95, 0.99, and 1.
+
+- `rate.png`: The overall rate of requests per second, over time, broken down
+  by `:f` and `:type`.
 
 - `log/n*.log`: The STDERR logs emitted by each node.
 
