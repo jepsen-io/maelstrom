@@ -89,7 +89,8 @@
   (println "| ---- | ---- | -------- | ----------- |")
 
   (doseq [{:keys [code name definite? doc]} (map val (sort @c/error-registry))]
-    (println "|" code "|" name "|" (if definite? "✓" " ") "|" doc "|")))
+    (println "|" code "|" name "|" (if definite? "✓" " ") "|"
+             (str/replace doc #"\n" " ") "|")))
 
 (defn print-protocol
   "Prints out the protocol documentation, including errors."

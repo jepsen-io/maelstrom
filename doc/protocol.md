@@ -25,9 +25,9 @@ Both STDIN and STDOUT messages are JSON objects, separated by newlines (`\n`). E
 
 ```edn
 {
-  "src":      A string identifying the node this message came from
-  "dest":     A string identifying the node this message is to
-  "body":     An object: the payload of the message
+  "src":  A string identifying the node this message came from
+  "dest": A string identifying the node this message is to
+  "body": An object: the payload of the message
 }
 ```
 
@@ -38,9 +38,9 @@ reserved keys:
 
 ```edn
 {
-  "type":          (mandatory) A string identifying the type of message this is
-  "msg_id":        (optional)  A unique integer identifier
-  "in_reply_to":   (optional)  For req/response, the msg_id of the request
+  "type":        (mandatory) A string identifying the type of message this is
+  "msg_id":      (optional)  A unique integer identifier
+  "in_reply_to": (optional)  For req/response, the msg_id of the request
 }
 ```
 
@@ -56,7 +56,7 @@ current value of key `5`:
 ```json
 {
   "type": "read",
-  "msg_id: 123,
+  "msg_id": 123,
   "key": 3
 }
 ```
@@ -70,6 +70,7 @@ And its corresponding response, indicating the value is presently `4`:
   "in_reply_to": 123,
   "value": 4
 }
+```
 
 The names of message types and the meanings of their fields are defined in the
 [workload documentation](workloads.md).
@@ -85,11 +86,11 @@ statistics for those messages.
 At the start of a test, Maelstrom issues a single `init` message to each node,
 like so:
 
-```edn
+```json
 {
-  "type":    "init",
-  "msg_id":  1
-  "node_id":  "n3"
+  "type":     "init",
+  "msg_id":   1,
+  "node_id":  "n3",
   "node_ids": ["n1", "n2", "n3"]
 }
 ```
@@ -107,13 +108,17 @@ In response to a Maelstrom RPC request, a node may respond with an *error*
 message, whose `body` is a JSON object like so:
 
 ```json
-{\"type\": \"error\",
- \"code\":  11,
- \"text\": \"Node n5 is waiting for quorum and cannot service requests yet\",
- \"in_reply_to\": 5}
+{"type":        "error",
+ "in_reply_to": 5,
+ "code":        11,
+ "text":        "Node n5 is waiting for quorum and cannot service requests yet"
+}
 ```
 
 The `type` of an error body is always `\"error\"`.
+
+As with all RPC responses, the `in_reply_to` field is the `msg_id` of
+the request which caused this error.
 
 The `code` is an integer which indicates the type of error which occurred.
 Maelstrom defines several error types, and you can also invent your own.
@@ -123,9 +128,6 @@ for your own purposes.
 The `text` field is a free-form string. It is optional, and may contain any
 explanatory message you like.
 
-As with all RPC responses, the `in_reply_to` field is the integer `msg_id` of
-the request which caused this error.
-
 You may include other keys in the error body, if you like; Maelstrom will
 retain them as a part of the history, and they may be helpful in your own
 analysis.
@@ -134,22 +136,15 @@ Errors are either *definite* or *indefinite*. A definite error means that the
 requested operation definitely did not (and never will) happen. An indefinite
 error means that the operation might have happened, or might never happen, or
 might happen at some later time. Maelstrom uses this information to interpret
-histories correctly.
+histories correctly, so it's important that you never return a definite error
+under indefinite conditions. When in doubt, indefinite is always safe.
 
 The following table lists all of Maelstrom's defined errors.
 
 
-
 | Code | Name | Definite | Description |
 | ---- | ---- | -------- | ----------- |
-| 0 | :timeout |   | Indicates that the requested operation could not be completed within a
-  timeout. |
+| 0 | :timeout |   | Indicates that the requested operation could not be completed within a   timeout. |
 | 1 | :node-not-found | ✓ | Thrown when a client sends an RPC request to a node which does not exist. |
-| 10 | :not-supported | ✓ | Use this error to indicate that a requested operation is not supported by
-  the current implementation. Helpful for stubbing out APIs during
-  development. |
-| 11 | :temporarily-unavailable | ✓ | Indicates that the operation definitely cannot be performed at this
-  time--perhaps because the server is in a read-only state, has not yet been
-  initialized, believes its peers to be down, and so on. Do *not* use this
-  error for indeterminate cases, when the operation may actually have taken
-  place. |
+| 10 | :not-supported | ✓ | Use this error to indicate that a requested operation is not supported by   the current implementation. Helpful for stubbing out APIs during   development. |
+| 11 | :temporarily-unavailable | ✓ | Indicates that the operation definitely cannot be performed at this   time--perhaps because the server is in a read-only state, has not yet been   initialized, believes its peers to be down, and so on. Do *not* use this   error for indeterminate cases, when the operation may actually have taken   place. |
