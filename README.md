@@ -59,7 +59,9 @@ sophisticated workloads.
 A full list of options is available by running `java -jar maelstrom.jar test
 --help`. The important ones are:
 
-- `--node NODE-NAME`: Specify node names by hand
+- `--workload NAME`: What kind of workload should be run?
+- `--bin SOME_BINARY`: The program you'd like Maelstrom to spawn instances of
+- `--node-count NODE-NAME`: How many instances of the binary should be spawned?
 
 To get more information, use:
 
@@ -69,13 +71,70 @@ To get more information, use:
 
 To make tests more or less aggressive, use:
 
+- `--nemesis FAULT_TYPE`: A comma-separated list of faults to inject
+- `--nemesis-interval SECONDS`: How long between nemesis operations, on average
 - `--concurrency INT`: Number of clients to run concurrently
-- `--rate FLOAT`: Approximate number of requests per second per client
+- `--rate FLOAT`: Approximate number of requests per second
 - `--time-limit SECONDS`: How long to run tests for
 - `--latency MILLIS`: Approximate simulated network latency, during normal
   operations.
 
 SSH options are unused; Maelstrom runs entirely on the local node.
+
+## Test Results
+
+Test results are stored in `store/<test-name>/<timestamp>/`. See `store/latest`
+for a symlink to the most recently completed test, and `store/current` for a
+symlink to the currently executing (or most recently completed) test.
+
+You can view these files at the command line, using a file explorer, or via
+Maelstrom's built-in web server. Run `java -jar maelstrom.jar serve` (or `lein
+run serve`) to launch the server on port 8080.
+
+Each workload generates slightly different files and output, but in every test,
+you'll find:
+
+- `jepsen.log`: The full logs from the test run, as printed to the console.
+
+- `results.edn`: The results of the test's checker, including statistics and
+  safety analysis. This structure is also printed at the end of a test.
+
+- `history.edn`: The history of all operations performed during the test, including reads, writes, and nemesis operations.
+
+- `history.txt`: A condensed, human-readable representation of the history.
+  Columns are `process`, `type`, `f`, `value`, and `error`.
+
+- `messages.svg`: A spacetime diagram of messages exchanged. Time flows
+  (nonlinearly) from top to bottom, and each node is shown as a vertical bar.
+  Messages are diagonal arrows between nodes, colorized by type. Hovering over
+  a message shows the message itself. Helpful for understanding how your
+  system's messages are flowing between nodes.
+
+- `log/n*.log`: The STDERR logs emitted by each node.
+
+- `timeline.html`: A diagram where time flows (nonlinearly) down, and each
+  process's operations are arranged in a vertical track. Blue indicates `ok`
+  operations, orange indicates indefinite (`info`) operations, and pink
+  indicates `fail`ed operations. Helpful in understanding the concurrency
+  structure of the test, as visible to Maelstrom.
+
+- `test.fressian`: A machine-readable copy of the entire test, including
+  history and analysis.
+
+`results.edn` is a map with a single keyword, `:valid?`, which can be one of
+three values:
+
+- `true`: The checker considers this history legal.
+- `:unknown`: The checker could not determine whether the history was valid.
+  This could happen if, for instance, the history contains no reads.
+- `false`: The checker identified an error of some kind.
+
+These values determine the colors of test directories in the web interface:
+blue means `:valid? true`, orange means `:valid? :unknown`, and pink means
+`:valid? false`. They also determine Jepsen's exit status when running a test:
+`true` exits with status 0, 1 indicates a failure, and 2 indicates an :unknown.
+Other exit statuses indicate internal Jepsen errors, like a crash.
+
 
 ## License
 
