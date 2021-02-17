@@ -135,7 +135,8 @@ requested operation definitely did not (and never will) happen. An indefinite
 error means that the operation might have happened, or might never happen, or
 might happen at some later time. Maelstrom uses this information to interpret
 histories correctly, so it's important that you never return a definite error
-under indefinite conditions. When in doubt, indefinite is always safe.
+under indefinite conditions. When in doubt, indefinite is always safe. Custom
+error codes are always indefinite.
 
 The following table lists all of Maelstrom's defined errors.
 
