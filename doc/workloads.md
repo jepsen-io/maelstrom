@@ -16,7 +16,8 @@ whether any were lost.
 This is a reference document, automatically generated from Maelstrom's source
 code by running `lein run doc`. For each workload, it describes the general
 semantics of that workload, what errors are allowed, and the structure of RPC
-messages that you'll need to handle. 
+messages that you'll need to handle.
+ 
 
 ## Table of Contents
 
