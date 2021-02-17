@@ -47,8 +47,6 @@ reserved keys:
 Message IDs should be unique on the node which sent them. For instance, each
 node can use a monotonically increasing integer as their source of message IDs.
 
-
-
 Each message has additional keys, depending on what kind of message it is. For
 example, here is a read request from the `lin_kv` workload, which asks for the
 current value of key `5`:
@@ -72,7 +70,7 @@ And its corresponding response, indicating the value is presently `4`:
 }
 ```
 
-The names of message types and the meanings of their fields are defined in the
+The various message types and the meanings of their fields are defined in the
 [workload documentation](workloads.md).
 
 Messages exchanged between your server nodes may have any `body` structure you
@@ -143,8 +141,8 @@ The following table lists all of Maelstrom's defined errors.
 
 
 | Code | Name | Definite | Description |
-| ---- | ---- | -------- | ----------- |
-| 0 | :timeout |   | Indicates that the requested operation could not be completed within a   timeout. |
-| 1 | :node-not-found | ✓ | Thrown when a client sends an RPC request to a node which does not exist. |
-| 10 | :not-supported | ✓ | Use this error to indicate that a requested operation is not supported by   the current implementation. Helpful for stubbing out APIs during   development. |
-| 11 | :temporarily-unavailable | ✓ | Indicates that the operation definitely cannot be performed at this   time--perhaps because the server is in a read-only state, has not yet been   initialized, believes its peers to be down, and so on. Do *not* use this   error for indeterminate cases, when the operation may actually have taken   place. |
+| ---: | :--- | :------: | :---------- |
+| 0 | timeout |   | Indicates that the requested operation could not be completed within a   timeout. |
+| 1 | node-not-found | ✓ | Thrown when a client sends an RPC request to a node which does not exist. |
+| 10 | not-supported | ✓ | Use this error to indicate that a requested operation is not supported by   the current implementation. Helpful for stubbing out APIs during   development. |
+| 11 | temporarily-unavailable | ✓ | Indicates that the operation definitely cannot be performed at this   time--perhaps because the server is in a read-only state, has not yet been   initialized, believes its peers to be down, and so on. Do *not* use this   error for indeterminate cases, when the operation may actually have taken   place. |

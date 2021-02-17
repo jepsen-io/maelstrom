@@ -86,10 +86,12 @@
   "Prints out the error registry, as Markdown, for documentation purposes."
   []
   (println "| Code | Name | Definite | Description |")
-  (println "| ---- | ---- | -------- | ----------- |")
+  (println "| ---: | :--- | :------: | :---------- |")
 
   (doseq [{:keys [code name definite? doc]} (map val (sort @c/error-registry))]
-    (println "|" code "|" name "|" (if definite? "✓" " ") "|"
+    (println "|" code "|"
+             (clojure.core/name name) "|"
+             (if definite? "✓" " ") "|"
              (str/replace doc #"\n" " ") "|")))
 
 (defn print-protocol
