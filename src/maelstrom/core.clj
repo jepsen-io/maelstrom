@@ -5,6 +5,7 @@
             [clojure.tools.logging :refer [info warn]]
             [maelstrom [client :as c]
                        [db :as db]
+                       [doc :as doc]
                        [net :as net]
                        [nemesis :as nemesis]
                        [process :as process]]
@@ -168,6 +169,6 @@
                                 "test-all")}
                    {"doc" {:opt-spec []
                            :run (fn [opts]
-                                  (c/print-registry))}})
+                                  (doc/write-docs!))}})
 
             args))

@@ -2,6 +2,7 @@
   "An eventually-consistent counter which supports increments and decrements.
   Validates that the final read on each node has a value which is the sum of
   all known (or possible) increments and decrements."
+  (:refer-clojure :exclude [read])
   (:require [maelstrom [client :as c]
                        [net :as net]]
             [jepsen [checker :as checker]

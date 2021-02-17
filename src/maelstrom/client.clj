@@ -16,20 +16,70 @@
   "The default timeout for receiving messages, in millis."
   5000)
 
-(def common-errors
-  "Errors which all Maelstrom tests support. A map of error codes to keyword
-  names for those errors, and whether or not that error is definite."
-  {0  {:definite? false   :name :timeout}
-   1  {:definite? true    :name :node-not-found}
-   10 {:definite? true    :name :not-supported}
-   11 {:definite? true    :name :temporarily-unavailable}})
+(def error-registry
+  "A map of error codes to maps describing those errors. Each error map has
+  keys:
+
+    :definite?  If true, this error means the requested operation definitely did not happen
+    :ns         The namespace where the error was defined
+    :name       A keyword, friendly name for the error
+    :doc        A docstring describing the meaning of the error"
+  (atom {}))
+
+(defmacro deferror
+  "Defines a new type of error. Takes an error code, a name (a symbol, which is
+  converted to a keyword and used as the `:name` of the error), a docstring,
+  and an error spec map, which is merged into the error registry. `defs` the
+  name symbol to the error map."
+  [code name docstring & [error-spec]]
+  (let [name-sym name
+        name  (keyword name)
+        error (assoc error-spec
+                     :ns   *ns*
+                     :doc  docstring
+                     :code code
+                     :name name)]
+    (swap! error-registry
+           (fn [registry]
+             ; Check for dups
+             (when (contains? registry code)
+               (throw+ {:type :duplicate-error-code
+                        :code code
+                        :extant (get registry code)}))
+             (when-let [extant (first (filter (comp #{name} :name)
+                                              (vals registry)))]
+               (throw+ {:type   :duplicate-error-name
+                        :name   name
+                        :extant extant}))
+             (assoc registry code error)))
+    `(def ~name-sym ~error)))
+
+(deferror 0 timeout
+  "Indicates that the requested operation could not be completed within a
+  timeout.")
+
+(deferror 1 node-not-found
+  "Thrown when a client sends an RPC request to a node which does not exist."
+  {:definite? true})
+
+(deferror 10 not-supported
+  "Use this error to indicate that a requested operation is not supported by
+  the current implementation. Helpful for stubbing out APIs during
+  development."
+  {:definite? true})
+
+(deferror 11 temporarily-unavailable
+  "Indicates that the operation definitely cannot be performed at this
+  time--perhaps because the server is in a read-only state, has not yet been
+  initialized, believes its peers to be down, and so on. Do *not* use this
+  error for indeterminate cases, when the operation may actually have taken
+  place."
+  {:definite? true})
 
 (defn open!
   "Creates a new synchronous network client, which can only do one thing at a
   time: send a message, or wait for a response. Mutates network to register the
-  client node. Options are:
-
-      :errors   A structure defining additional error types. See common-errors."
+  client node. Options are currently unused."
   ([net]
    (open! net {}))
   ([net opts]
@@ -38,8 +88,7 @@
      {:net         net
       :node-id     id
       :next-msg-id (atom 0)
-      :waiting-for (atom nil)
-      :errors      (merge common-errors (:errors opts))})))
+      :waiting-for (atom nil)})))
 
 (defn close!
   "Closes a sync client."
@@ -118,7 +167,7 @@
   (let [body (:body m)]
     (when (= "error" (:type body))
       (let [code      (:code body)
-            error     (get (:errors client) code)]
+            error     (get @error-registry code)]
         (throw+ {:type      :rpc-error
                  :code      code
                  :name      (:name error :unknown)
@@ -143,74 +192,6 @@
   "A persistent registry of all RPC calls we've defined. Used to automatically
   generate documentation!"
   (atom []))
-
-(defn unindent
-  "Strips leading whitespace from all lines in a string."
-  [s]
-  (str/replace s #"(^|\n)[ \t]+" "$1"))
-
-(def workloads-preamble
-  "A *workload* specifies the semantics of a distributed system: what
-  operations are performed, how clients submit requests to the system, what
-  those requests mean, what kind of responses are expected, which errors can
-  occur, and how to check the resulting history for safety.
-
-  For instance, the *broadcast* workload says that clients submit `broadcast`
-  messages to arbitrary servers, and can send a `read` request to obtain the
-  set of all broadcasted messages. Clients mix reads and broadcast operations
-  throughout the history, and at the end of the test, perform a final read
-  after allowing a brief period for convergence. To check broadcast histories,
-  Maelstrom looks to see how long it took for messages to be broadcast, and
-  whether any were lost.
-
-  This is a reference document, automatically generated from Maelstrom's source
-  code by running `lein run doc`. For each workload, it describes the general
-  semantics of that workload, what errors are allowed, and the structure of RPC
-  messages that you'll need to handle.")
-
-(defn print-registry
-  "Prints out the RPC registry to the console, for help messages."
-  ([]
-   (print-registry @rpc-registry))
-  ([rpcs]
-   ; Group RPCs by namespace
-   (let [ns->rpcs (->> rpcs
-                       (group-by (fn [rpc]
-                                   (-> rpc
-                                       :ns
-                                       ns-name
-                                       name
-                                       (str/split #"\.")
-                                       last)))
-                       (sort-by key))]
-
-     (println "# Workloads\n")
-     (println (unindent workloads-preamble) "\n")
-
-     (println "## Table of Contents\n")
-     (doseq [[ns rpcs] ns->rpcs]
-       (println (str "- [" (str/capitalize ns) "](#workload-" ns ")")))
-     (println)
-
-     (doseq [[ns rpcs] ns->rpcs]
-       (println "## Workload:" (str/capitalize ns) "\n")
-
-       (println (unindent (:doc (meta (:ns (first rpcs))))) "\n")
-
-       (doseq [rpc rpcs]
-         (println "### RPC:" (str/capitalize (:name rpc)) "\n")
-         (println (unindent (:doc rpc)) "\n")
-         (println "Request:\n")
-         (println "```clj")
-         (pprint (:send rpc))
-         (println "```")
-         (println "\nResponse:\n")
-         (println "```clj")
-         (pprint (:recv rpc))
-         (println "```")
-         (println "\n"))
-
-       (println)))))
 
 (defn check-body
   "Uses a schema checker to validate `data`. Throws an exception if validation
