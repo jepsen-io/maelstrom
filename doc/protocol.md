@@ -146,3 +146,6 @@ The following table lists all of Maelstrom's defined errors.
 | 1 | node-not-found | ✓ | Thrown when a client sends an RPC request to a node which does not exist. |
 | 10 | not-supported | ✓ | Use this error to indicate that a requested operation is not supported by   the current implementation. Helpful for stubbing out APIs during   development. |
 | 11 | temporarily-unavailable | ✓ | Indicates that the operation definitely cannot be performed at this   time--perhaps because the server is in a read-only state, has not yet been   initialized, believes its peers to be down, and so on. Do *not* use this   error for indeterminate cases, when the operation may actually have taken   place. |
+| 20 | key-does-not-exist | ✓ | The client requested an operation on a key which does not exist (assuming   the operation should not automatically create missing keys). |
+| 21 | key-already-exists | ✓ | The client requested the creation of a key which already exists, and the   server will not overwrite it. |
+| 22 | precondition-failed | ✓ | The requested operation expected some conditions to hold, and those   conditions were not met. For instance, a compare-and-set operation might   assert that the value of a key is currently 5; if the value is 3, the server   would return `precondition-failed`. |
