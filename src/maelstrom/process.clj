@@ -24,7 +24,7 @@
   "Spawns a future which handles stderr from a process."
   [^Process p node-id debug-buffer log-writer log-stderr?]
   (future
-    (with-thread-name (str "node " node-id)
+    (with-thread-name (str node-id " stderr")
       (with-open [log log-writer]
         (doseq [line (bs/to-line-seq (.getErrorStream p))]
           ; Console log
@@ -42,7 +42,7 @@
   the network."
   [^Process p node-id debug-buffer net]
   (future
-    (with-thread-name (str "node " node-id)
+    (with-thread-name (str node-id " stdout")
       (try
         (doseq [line (bs/to-line-seq (.getInputStream p))]
           ; Debugging buffer
@@ -71,7 +71,7 @@
   process's stdin."
   [^Process p node-id net running?]
   (future
-    (with-thread-name (str "node " node-id)
+    (with-thread-name (str node-id " stdin")
       (try
         (with-open [w (OutputStreamWriter. (.getOutputStream p))]
           (while (deref running?)
@@ -116,6 +116,7 @@
   (let [node-id (:node-id opts)
         net     (:net opts)
         _       (net/add-node! net node-id)
+        _       (io/make-parents (:log-file opts))
         log     (io/writer (:log-file opts))
         bin     (.getCanonicalPath (io/file (:bin opts)))
         process (-> (ProcessBuilder. (cons bin (:args opts)))
@@ -130,6 +131,7 @@
      :running?      running?
      :node-id       node-id
      :net           net
+     :log           log
      :log-file      (:log-file opts)
      :stderr-debug-buffer stderr-debug-buffer
      :stdout-debug-buffer stdout-debug-buffer
@@ -140,33 +142,41 @@
 
 (defn stop-node!
   "Kills a node. Throws if the node already exited."
-  [{:keys [^Process process running? node-id net log-file
-           stdin-thread stderr-thread stdout-thread
-           stderr-debug-buffer stdout-debug-buffer]}]
-  (when-not (.isAlive process)
-    (throw+ {:type :node-crashed
-             :node node-id
-             :exit (.exitValue process)}
-            nil
-            (str "Node " node-id " crashed with exit status "
-                 (.exitValue process)
-                 ". Before crashing, it wrote to STDOUT:\n\n"
-                 (->> @stdout-debug-buffer (str/join "\n"))
-                 "\n\nAnd to STDERR:\n\n"
-                 (->> @stderr-debug-buffer (str/join "\n"))
-                 "\n\n"
-                 "Full STDERR logs are available in " log-file)))
-  ; Kill
-  (.. ^Process process destroyForcibly (waitFor 5 TimeUnit/SECONDS))
-  ; Shut down workers
-  (reset! running? false)
-  (mapv deref [stdin-thread stderr-thread stdout-thread])
+  [{:keys [^Process process running? node-id net log-file log stdin-thread
+           stderr-thread stdout-thread stderr-debug-buffer
+           stdout-debug-buffer]}]
+  (let [crashed? (not (.isAlive process))]
+    (when-not crashed?
+      ; Kill
+      (.. ^Process process destroyForcibly (waitFor 5 TimeUnit/SECONDS)))
 
-  ; Remove self from network
-  (net/remove-node! net node-id)
+    ; Shut down workers
+    (reset! running? false)
+    (mapv deref [stdin-thread stderr-thread stdout-thread])
 
-  ; Return status of workers
-  {:exit        (.exitValue process)
-   :stdin       @stdin-thread
-   :stderr      @stderr-thread
-   :stdout      @stdout-thread})
+    ; Remove self from network
+    (net/remove-node! net node-id)
+
+    ; Close log writer
+    (.close log)
+
+    ; If we crashed, throw a nice exception
+    (when crashed?
+      (throw+ {:type :node-crashed
+               :node node-id
+               :exit (.exitValue process)}
+              nil
+              (str "Node " node-id " crashed with exit status "
+                   (.exitValue process)
+                   ". Before crashing, it wrote to STDOUT:\n\n"
+                   (->> @stdout-debug-buffer (str/join "\n"))
+                   "\n\nAnd to STDERR:\n\n"
+                   (->> @stderr-debug-buffer (str/join "\n"))
+                   "\n\n"
+                   "Full STDERR logs are available in " log-file)))
+
+    ; Return status of workers
+    {:exit        (.exitValue process)
+     :stdin       @stdin-thread
+     :stderr      @stderr-thread
+     :stdout      @stdout-thread}))

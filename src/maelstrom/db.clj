@@ -21,15 +21,16 @@
       (setup! [_ test node-id]
         (info "Setting up" node-id)
         (swap! processes assoc node-id
-               (process/start-node! {:node-id  node-id
-                                     :bin      (:bin opts)
-                                     :args     (:args opts)
-                                     :net      net
-                                     :dir      "/tmp"
-                                     :log-stderr? (:log-stderr test)
-                                     :log-file (->> (str node-id ".log")
-                                                    (store/path test)
-                                                    .getCanonicalPath)}))
+               (process/start-node!
+                 {:node-id  node-id
+                  :bin      (:bin opts)
+                  :args     (:args opts)
+                  :net      net
+                  :dir      "/tmp"
+                  :log-stderr? (:log-stderr test)
+                  :log-file (->> (str node-id ".log")
+                                 (store/path test "node-logs")
+                                 .getCanonicalPath)}))
 
         (let [client (client/open! net)]
           (try+
