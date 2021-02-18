@@ -47,9 +47,27 @@
                    {:type "error", :code 20, :text "key does not exist"}])))))
 
 (defn persistent-kv
-  "A persistent key-value store."
+  "A persistent key-value store. Work just like Maelstrom's `lin-kv` workload."
   []
   (PersistentKV. {}))
+
+(defrecord PersistentTSO [ts]
+  PersistentService
+  (handle [this message]
+    (let [body (:body message)]
+      (case (:type body)
+        "ts" [(PersistentTSO. (inc ts))
+              {:type "ts_ok", :ts ts}]))))
+
+(defn persistent-tso
+  "A TimeStamp Oracle service which provides a monotonically increasing stream
+  of integers, starting at 0. Responds to `{:type \"ts\"}` requests by
+  providing a unique timestamp, like so:
+
+    {:type \"ts_ok\"
+     :ts 123}"
+  []
+  (PersistentTSO. 0))
 
 (defprotocol MutableService
   (handle! [this message]
@@ -89,7 +107,7 @@
                      ; Pick some index to interact with
                      index        (-> last-index
                                       (- client-index)
-                                      rand
+                                      rand-int
                                       (+ client-index))
                      _ (assert (<= client-index index last-index))
                      ; We compute a negative offset into the buffer: -1 is
@@ -173,5 +191,6 @@
 (defn default-services
   "Constructs some default services you might find useful."
   [test]
-  {"seq-kv" (sequential   (persistent-kv))
-   "lin-kv" (linearizable (persistent-kv))})
+  {"seq-kv"  (sequential   (persistent-kv))
+   "lin-kv"  (linearizable (persistent-kv))
+   "lin-tso" (linearizable (persistent-tso))})
