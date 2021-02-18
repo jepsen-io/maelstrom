@@ -1,11 +1,13 @@
 (ns maelstrom.db
   "Shared functionality for starting database 'nodes'"
   (:require [clojure.tools.logging :refer [info warn]]
-            [jepsen [db :as db]
+            [jepsen [core :as jepsen]
+                    [db :as db]
                     [store :as store]]
             [maelstrom [client :as client]
                        [net :as net]
-                       [process :as process]]
+                       [process :as process]
+                       [service :as service]]
             [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn db
@@ -15,10 +17,18 @@
       :args - args to that binary
       :net - a network"
   [opts]
-  (let [net (:net opts)
+  (let [net       (:net opts)
+        services  (atom nil)
         processes (atom {})]
     (reify db/DB
       (setup! [_ test node-id]
+        ; Spawn built-in Maelstrom services
+        (when (= (jepsen/primary test) node-id)
+          (reset! services (service/start-services!
+                             net
+                             (service/default-services test))))
+
+        ; Start this node
         (info "Setting up" node-id)
         (swap! processes assoc node-id
                (process/start-node!
@@ -32,6 +42,7 @@
                                  (store/path test "node-logs")
                                  .getCanonicalPath)}))
 
+        ; Initialize this node
         (let [client (client/open! net)]
           (try+
             (let [res (client/rpc!
@@ -58,7 +69,14 @@
               (client/close! client)))))
 
       (teardown! [_ test node]
+        ; Tear down node
         (when-let [p (get @processes node)]
           (info "Tearing down" node)
           (process/stop-node! p)
-          (swap! processes dissoc node))))))
+          (swap! processes dissoc node))
+
+        ; Tear down services
+        (when (= node (jepsen/primary test))
+          (when-let [s @services]
+            (service/stop-services! s)
+            (reset! services nil)))))))

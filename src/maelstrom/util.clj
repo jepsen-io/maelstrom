@@ -21,5 +21,8 @@
   [clients]
   (->> clients
        (sort-by (fn [client]
-                  (let [[_ type num] (re-find #"(\w+?)(\d+)" client)]
-                    [type (Long/parseLong num)])))))
+                  (if-let [[_ type num] (re-find #"(\w+?)(\d+)" client)]
+                    ; Typical 'c1', 'n4', etc
+                    [0 type (Long/parseLong num)]
+                    ; Sort special (services) nodes last
+                    [1 client 0])))))
