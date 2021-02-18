@@ -22,6 +22,12 @@
           [new-service-state, response-body]. The response body is sent
           back to the requesting client."))
 
+(defprotocol Merge
+  (merge-services [this other]
+                  "Merges two instances of a persistent service together, using
+                  last-write-wins semantics. For our purposes, last-write-wins
+                  means *any* write wins, so get creative."))
+
 (defrecord PersistentKV [m]
   PersistentService
   (handle [this message]
@@ -50,6 +56,59 @@
   "A persistent key-value store. Work just like Maelstrom's `lin-kv` workload."
   []
   (PersistentKV. {}))
+
+; clock is our local timestamp, which increments on every update.
+; m is a map of keys to {:ts n, :value whatever}.
+(defrecord LWWKV [clock m]
+  PersistentService
+  (handle [this message]
+    (let [body (:body message)
+          k    (:key body)]
+      (case (:type body)
+        "read" [this
+                (if (contains? m k)
+                  {:type "read_ok", :value (:value (m k))}
+                  {:type "error", :code 20, :text "key does not exist"})]
+        "write" [(LWWKV. (inc clock)
+                         (assoc m k {:ts    clock
+                                     :value (:value body)}))
+                 {:type "write_ok"}]
+        "cas"   (if (contains? m k)
+                  (if (= (:from body) (:value (m k)))
+                    [(LWWKV. (inc clock)
+                             (assoc m k {:ts    clock
+                                         :value (:to body)}))
+                     {:type "cas_ok"}]
+                    [this
+                     {:type "error"
+                      :code 22
+                      :text (str "current value " (pr-str (:value (m k)))
+                                 " is not " (:from body))}])
+                  [this
+                   {:type "error", :code 20, :text "key does not exist"}]))))
+
+  Merge
+  (merge-services [this other]
+    ; Clocks are a Lamport timestamp
+    (LWWKV. (max clock (:clock other))
+            ; Values are merged by timestamp, then natural order
+            (merge-with (fn [v1 v2]
+                          (let [t1 (:ts v1)
+                                t2 (:ts v2)
+                                v1 (:value v1)
+                                v2 (:value v2)]
+                            (cond (< t1 t2) v2
+                                  (< t2 t1) v1
+                                  :else     (max v1 v2))))
+                        m (:m other)))))
+
+(defn lww-kv
+  "A last-write-wins key-value store. Works just like Maelstrom's `lin-kv`
+  workload, but eventually consistent. Each instance maintains a Lamport clock,
+  and assigns timestamps to values based on that clock. Merges clocks and
+  values together with last-write-wins."
+  []
+  (LWWKV. 0 {}))
 
 (defrecord PersistentTSO [ts]
   PersistentService
@@ -146,6 +205,39 @@
                        :last-index 0
                        :clients    {}}))))
 
+; Replicas is an atom to a vector of states, simulating several independent
+; replicas. States are updated and merged at random.
+(defrecord Eventual [replicas]
+  MutableService
+  (handle! [this message]
+    (let [response (atom nil)]
+      (swap! replicas
+             (fn [replicas]
+               ; Merge one random replica into another
+               (let [n            (count replicas)
+                     merge-source (rand-int n)
+                     merge-dest   (rand-int n)
+                     merged       (merge-services (nth replicas merge-source)
+                                                  (nth replicas merge-dest))
+                     replicas'    (assoc replicas merge-dest merged)
+
+                     ; Apply message to yet another random replica
+                     i              (rand-int n)
+                     [replica' res] (handle (nth replicas i) message)
+                     replicas'      (assoc replicas i replica')]
+                 (reset! response res)
+                 replicas')))
+      @response)))
+
+(defn eventual
+  "An eventual service wraps a PersistentService, simulating n distinct
+  replicas of that service. Replicas periodically gossip state between them,
+  using `merge` to compute new states."
+  ([persistent-service]
+   (eventual 5 persistent-service))
+  ([n persistent-service]
+   (Eventual. (atom (vec (repeat n persistent-service))))))
+
 (defn service-thread
   "Spawns a thread which handles service requests from the network. Takes a
   network, a running atom, a node ID, and a MutableService."
@@ -191,6 +283,7 @@
 (defn default-services
   "Constructs some default services you might find useful."
   [test]
-  {"seq-kv"  (sequential   (persistent-kv))
+  {"lww-kv"  (eventual     (lww-kv))
+   "seq-kv"  (sequential   (persistent-kv))
    "lin-kv"  (linearizable (persistent-kv))
    "lin-tso" (linearizable (persistent-tso))})

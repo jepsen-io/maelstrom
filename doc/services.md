@@ -25,10 +25,13 @@ write, read, and compare-and-set operations on individual keys.
 
 ## seq-kv
 
-A sequentially consistent key-value store. All operations appear to take place
-in a total order. Each client observes a strictly monotonic order of
-operations. However, clients may interact with past states of the key-value
-store, provided that interaction does not violate these ordering constraints.
+A sequentially consistent key-value store. Just like `lin-kv`, but with relaxed
+consistency.
+
+All operations appear to take place in a total order. Each client
+observes a strictly monotonic order of operations. However, clients may
+interact with past states of the key-value store, provided that interaction
+does not violate these ordering constraints.
 
 This is *more* than simply stale reads: update operations may interact with
 past states, so long as doing so would not violate the total-order constraints.
@@ -47,6 +50,14 @@ semantics.
 2. `n1` writes x = 1
 3. `n2` compare-and-sets x from 1 to 2
 4. `n2` reads x = 2
+
+## lww-kv
+
+An intentionally pathological last-write-wins key-value store. Simulates n
+(default: 5) independent nodes, each of which responds to KV requests
+independently. Each write is assigned a roughly synchronized timestamp. Nodes
+periodically gossip their values and merge them together, preferring higher
+timestamps. The API is identical to `seq-kv` and `lin-kv`.
 
 ## lin-tso
 
