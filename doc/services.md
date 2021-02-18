@@ -28,7 +28,7 @@ write, read, and compare-and-set operations on individual keys.
 A sequentially consistent key-value store. All operations appear to take place
 in a total order. Each client observes a strictly monotonic order of
 operations. However, clients may interact with past states of the key-value
-store, provided it does not violate these ordering constraints.
+store, provided that interaction does not violate these ordering constraints.
 
 This is *more* than simply stale reads: update operations may interact with
 past states, so long as doing so would not violate the total-order constraints.
@@ -37,7 +37,7 @@ For example, the following non-concurrent history is legal:
 1. `n1` writes x = 1
 2. `n2` compare-and-sets x from 1 to 2
 3. `n1` writes x = 1
-4. `n2` reads x = 1
+4. `n2` reads x = 2
 
 This is legal because `n1`'s second write can be re-ordered to the past without
 violating the per-process ordering constraint, and retaining identical
@@ -46,7 +46,7 @@ semantics.
 1. `n1` writes x = 1
 2. `n1` writes x = 1
 3. `n2` compare-and-sets x from 1 to 2
-4. `n2` reads x = 1
+4. `n2` reads x = 2
 
 ## lin-tso
 
