@@ -188,6 +188,24 @@
           (throw-errors! client)
           :body)))
 
+(defmacro with-errors
+  "Takes an operation, a set of idempotent `:f`s, and evaluates body. Captures
+  RPC errors and converts them to operations with :type :info or :type :fail,
+  as appropriate."
+  [op idempotent & body]
+  `(try+
+     ~@body
+     (catch [:type :rpc-error] e#
+       (let [type# (if (or (:definite? e#) :fail
+                           (~idempotent (:f ~op)))
+                     :fail
+                     :info)]
+         (assoc ~op
+                :type type#
+                :error [(:name e#) (:text (:body e#))])))))
+
+;; Defining RPCs
+
 (def rpc-registry
   "A persistent registry of all RPC calls we've defined. Used to automatically
   generate documentation!"

@@ -66,8 +66,9 @@
      (setup! [this test])
 
      (invoke! [_ test op]
-       (let [[k v]   (:value op)
-             timeout (max (* 10 (:latency test)) 1000)]
+       (c/with-errors op #{:read}
+         (let [[k v]   (:value op)
+               timeout (max (* 10 (:latency test)) 1000)]
            (case (:f op)
              :read (let [res (read conn node {:key k} timeout)
                          v (:value res)]
@@ -80,7 +81,7 @@
 
              :cas (let [[v v'] v
                         res (cas! conn node {:key k, :from v, :to v'} timeout)]
-                    (assoc op :type :ok)))))
+                    (assoc op :type :ok))))))
 
      (teardown! [_ test])
 

@@ -190,6 +190,7 @@
   "Converts a message to a Dali line and label"
   [width y-step node-index message]
   (let [m (:message message)
+        body (:body m)
         from (:from message)
         to (:to message)
         x0 (x width node-index (:node from))
@@ -214,7 +215,11 @@
                       ; Text will be upside down, so we flip it here
                       :transform (when left?
                                    (str "rotate(180 "(/ length 2) " 0)"))}
-               (:type (:body m))]]
+               (:type body)
+               " "
+               (case (:type body)
+                 "error" (:text body)
+                 (pr-str (dissoc body :type :msg_id :in_reply_to)))]]
     ; Recall that transforms are applied last to first, because they expand to
     ; effectively nested transforms
     [:g {:transform (str

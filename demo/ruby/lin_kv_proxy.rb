@@ -30,7 +30,7 @@ class LinKVNode
 
     # Replace with seq-kv or lww-kv to see linearization failures!
     # @node.rpc! "seq-kv", proxy_body do |res|
-    @node.rpc! "lww-kv", proxy_body do |res|
+    @node.rpc! "lin-kv", proxy_body do |res|
       res[:body].delete :msg_id
       @node.reply! req_msg, res[:body]
     end
