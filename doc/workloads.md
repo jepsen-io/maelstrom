@@ -26,6 +26,7 @@ messages that you'll need to handle.
 - [G-set](#workload-g-set)
 - [Lin-kv](#workload-lin-kv)
 - [Pn-counter](#workload-pn-counter)
+- [Txn-list-append](#workload-txn-list-append)
 
 ## Workload: Broadcast 
 
@@ -285,6 +286,74 @@ Response:
 ```clj
 {:type (eq "read_ok"),
  :value Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+
+## Workload: Txn-list-append 
+
+A transactional workload over a map of keys to lists of elements. Clients
+submit a single transaction per request via a `txn` request, and expect a
+completed version of that transaction in a `txn_ok` response.
+
+A transaction is an array of micro-operations, which should be executed in
+order:
+
+```edn
+[op1, op2, ...]
+```
+
+Each micro-op is a 3-element array comprising a function, key, and value:
+
+```edn
+[f, k, v]
+```
+
+There are two functions. A *read* observes the current value of a specific
+key. `["r", 5, [1, 2]]` denotes that a read of key 5 observed the list `[1,
+2]`. When clients submit writes, they leave their values `null`:  `["r", 5,
+null]`. The server processing the transaction should replace that value with
+whatever the observed value is for that key: `["r", 5, [1, 2]]`.
+
+An *append* adds an element to the end of the key's current value. For
+instance, `["append", 5, 3]` means "add 3 to the end of the list for key
+5." If key 5 were currently `[1, 2]`, the resulting value would become `[1,
+2, 3]`. Appends have values provided by the client, and are returned
+unchanged.
+
+Unlike lin-kv, nonexistent keys should be returned as `null`. Lists are
+implicitly created on first append.
+
+This workload can check many kinds of consistency levels. See the
+`--consistency-level` CLI option for details. 
+
+### RPC: Txn! 
+
+Requests that the node execute a single transaction. Servers respond with a
+`txn_ok` message, and a completed version of the requested transaction; e.g.
+with read values filled in. Keys and list elements may be of any type. 
+
+Request:
+
+```clj
+{:type (eq "txn"),
+ :txn
+ [(either
+   [(one (eq "r") "f") (one Any "k") (one (eq nil) "v")]
+   [(one (eq "append") "f") (one Any "k") (one Any "v")])],
+ :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "txn_ok"),
+ :txn
+ [(either
+   [(one (eq "r") "f") (one Any "k") (one [Any] "v")]
+   [(one (eq "append") "f") (one Any "k") (one Any "v")])],
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```

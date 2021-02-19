@@ -76,6 +76,29 @@
   place."
   {:definite? true})
 
+(deferror 12 malformed-request
+  "The client's request did not conform to the server's expectations, and could
+  not possibly have been processed."
+  {:definite? true})
+
+(deferror 13 crash
+  "Indicates that some kind of general, indefinite error occurred. Use
+  this as a catch-all for errors you can't otherwise categorize, or as a
+  starting point for your error handler: it's safe to return `internal-error`
+  for every problem by default, then add special cases for more specific errors
+  later."
+  {:definite? false})
+
+(deferror 14 abort
+  "Indicates that some kind of general, definite error occurred. Use this as a
+  catch-all for errors you can't otherwise categorize, when you specifically
+  know that the requested operation has not taken place. For instance, you
+  might encounter an indefinite failure during the prepare phase of a
+  transaction: since you haven't started the commit process yet, the
+  transaction can't have taken place. It's therefore safe to return a definite
+  `abort` to the client."
+  {:definite? true})
+
 (defn open!
   "Creates a new synchronous network client, which can only do one thing at a
   time: send a message, or wait for a response. Mutates network to register the
@@ -195,6 +218,11 @@
   [op idempotent & body]
   `(try+
      ~@body
+     (catch [:type ::timeout] e#
+       (let [type# (if (~idempotent (:f ~op)) :fail :info)]
+         (assoc ~op
+                :type type#,
+                :error :net-timeout)))
      (catch [:type :rpc-error] e#
        (let [type# (if (or (:definite? e#) :fail
                            (~idempotent (:f ~op)))

@@ -1,6 +1,8 @@
 # Shared functions for all nodes.
 
 require 'json'
+require_relative 'promise.rb'
+require_relative 'errors.rb'
 
 class Node
   attr_accessor :node_id, :node_ids
@@ -9,10 +11,12 @@ class Node
     @node_id = nil
     @node_ids = nil
     @next_msg_id = 0
+    @init_handlers = []
     @handlers = {}
     @callbacks = {}
     @every_tasks = []
     @lock = Monitor.new
+    @log_lock = Mutex.new
 
     @in_buffer = ""
 
@@ -23,12 +27,25 @@ class Node
       @node_id = body[:node_id]
       @node_ids = body[:node_ids]
 
+      # Call init handlers
+      @init_handlers.each do |h|
+        h.call msg
+      end
+
       # Let Maelstrom know we initialized
       reply! msg, {type: "init_ok"}
-      STDERR.puts "Node initialized"
+      log "Node initialized"
 
       # Spawn periodic task handlers
       start_every_tasks!
+    end
+  end
+
+  # Writes a message to stderr
+  def log(message)
+    @log_lock.synchronize do
+      STDERR.puts message
+      STDERR.flush
     end
   end
 
@@ -48,13 +65,18 @@ class Node
     @handlers[type] = handler
   end
 
+  # A special handler for initialization
+  def on_init(&handler)
+    @init_handlers << handler
+  end
+
   # Send a body to the given node id. Fills in src with our own node_id.
   def send!(dest, body)
     msg = {dest: dest,
            src: @node_id,
            body: body}
     @lock.synchronize do
-      STDERR.puts "Sent #{msg.inspect}"
+      log "Sent #{msg.inspect}"
       JSON.dump msg, STDOUT
       STDOUT << "\n"
       STDOUT.flush
@@ -74,7 +96,8 @@ class Node
     send! req[:src], body
   end
 
-  # Send an async RPC request
+  # Send an async RPC request. Invokes block with response message once one
+  # arrives.
   def rpc!(dest, body, &handler)
     @lock.synchronize do
       msg_id = @next_msg_id += 1
@@ -82,6 +105,16 @@ class Node
       body[:msg_id] = msg_id
       send! dest, body
     end
+  end
+
+  # Sends a synchronous RPC request, blocking this thread and returning the
+  # response message.
+  def sync_rpc!(dest, body)
+    p = Promise.new
+    rpc! dest, body do |response|
+      p.deliver! response
+    end
+    p.await
   end
 
   # Periodically evaluates block every dt seconds with the node lock
@@ -104,13 +137,21 @@ class Node
     end
   end
 
+  # Turns a line of STDIN into a message hash
+  def parse_msg(line)
+    msg = JSON.parse line
+    msg.transform_keys!(&:to_sym)
+    msg[:body].transform_keys!(&:to_sym)
+    msg
+  end
+
   # Loops, processing messages.
   def main!
     Thread.abort_on_exception = true
 
     while line = STDIN.gets
-      msg = JSON.parse line, symbolize_names: true
-      STDERR.puts "Received #{msg.inspect}"
+      msg = parse_msg line
+      log "Received #{msg.inspect}"
 
       handler = nil
       @lock.synchronize do
@@ -120,8 +161,26 @@ class Node
         else
           raise "No callback or handler for #{msg.inspect}"
         end
-        handler.call msg
       end
+
+      # Ruby doesn't close over variables assigned in `while` scope, which
+      # means every worker thread will actually operate on the *same* msg. To
+      # safely close over message, we use a promise and refuse to move on until
+      # the worker thread has cloned the current message.
+      started = Promise.new
+      Thread.new do
+        m = msg.clone
+        started.deliver! nil
+        begin
+          handler.call m
+        rescue RPCError => e
+          reply! m, e.to_json
+        rescue => e
+          log "Exception handling #{m}:\n#{e.full_message}"
+          reply! m, RPCError.crash(e.full_message).to_json
+        end
+      end
+      started.await
     end
   end
 end

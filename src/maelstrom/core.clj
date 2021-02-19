@@ -3,6 +3,7 @@
   (:refer-clojure :exclude [run! test])
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer [info warn]]
+            [elle.consistency-model :as cm]
             [maelstrom [client :as c]
                        [db :as db]
                        [doc :as doc]
@@ -14,7 +15,8 @@
                                 [echo :as echo]
                                 [g-set :as g-set]
                                 [pn-counter :as pn-counter]
-                                [lin-kv :as lin-kv]]
+                                [lin-kv :as lin-kv]
+                                [txn-list-append :as txn-list-append]]
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [core :as core]
@@ -26,11 +28,12 @@
 
 (def workloads
   "A map of workload names to functions which construct workload maps."
-  {:broadcast   broadcast/workload
-   :echo        echo/workload
-   :g-set       g-set/workload
-   :pn-counter  pn-counter/workload
-   :lin-kv      lin-kv/workload})
+  {:broadcast       broadcast/workload
+   :echo            echo/workload
+   :g-set           g-set/workload
+   :pn-counter      pn-counter/workload
+   :lin-kv          lin-kv/workload
+   :txn-list-append txn-list-append/workload})
 
 (def nemeses
   "A set of valid nemeses you can pass at the CLI."
@@ -106,6 +109,17 @@
   "Extra options for the CLI"
   [[nil "--bin FILE"        "Path to binary which runs a node"]
 
+   [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
+    :default [:strict-serializable]
+    :parse-fn (fn [s]
+                (map keyword (str/split #"\s+,\s+" s)))
+    :validate [(partial every? cm/friendly-model-name)
+               (cli/one-of (sort (map cm/friendly-model-name cm/all-models)))]]
+
+   [nil "--key-count INT" "For the append test, how many keys should we test at once?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
+
    [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
     :default 0
     :parse-fn parse-long
@@ -119,6 +133,14 @@
 
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
     :default false]
+
+   [nil "--max-txn-length INT" "What's the most operations we can execute per transaction?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
+
+   [nil "--max-writes-per-key INT" "How many writes can we perform to any single key, for append tests?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
 
    [nil "--node-count NUM" "How many nodes to run. Overrides --nodes, if given."
     :default nil

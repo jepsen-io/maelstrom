@@ -20,6 +20,27 @@
   "Number of lines of stderr and stdout we store for debugging assistance"
   32)
 
+(defn keywordize-keys-1
+  "Converts keys to keywords at a single level of a map."
+  [m]
+  (persistent!
+    (reduce (fn [m [k v]]
+              (assoc! m (keyword k) v))
+            (transient {})
+            m)))
+
+(defn parse-msg
+  "We may be dealing in arbitrary JSON payloads, and coercing all keys to
+  keywords may really mess up maps like {\"9\": true}. I don't know a rigorous
+  way to eliminate this problem yet--schema.core's coercion might come in handy
+  but I don't really underSTAND it yet. For right now, we convert just the keys
+  in the message and body, to one level. Nothing is nested deeper than that
+  anyway."
+  [message]
+  (-> message
+      keywordize-keys-1
+      (update :body keywordize-keys-1)))
+
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
   [^Process p node-id debug-buffer log-writer log-stderr?]
@@ -49,7 +70,7 @@
           (swap! debug-buffer conj line)
           ; Parse and insert into network
           (try
-            (let [parsed (json/parse-string line true)]
+            (let [parsed (-> line json/parse-string parse-msg)]
               (try
                 (net/send! net parsed)
                 (catch java.lang.AssertionError e

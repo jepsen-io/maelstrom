@@ -48,7 +48,7 @@
                      {:type "error"
                       :code 22
                       :text (str "current value " (pr-str (m k))
-                                 " is not " (:from body))}])
+                                 " is not " (pr-str (:from body)))}])
                   [this
                    {:type "error", :code 20, :text "key does not exist"}])))))
 
@@ -95,11 +95,11 @@
             (merge-with (fn [v1 v2]
                           (let [t1 (:ts v1)
                                 t2 (:ts v2)
-                                v1 (:value v1)
-                                v2 (:value v2)]
-                            (cond (< t1 t2) v2
-                                  (< t2 t1) v1
-                                  :else     (max v1 v2))))
+                                x1 (:value v1)
+                                x2 (:value v2)]
+                            (cond (< t1 t2)               v2
+                                  (< t2 t1)               v1
+                                  :else                   v1)))
                         m (:m other)))))
 
 (defn lww-kv
@@ -234,7 +234,7 @@
   replicas of that service. Replicas periodically gossip state between them,
   using `merge` to compute new states."
   ([persistent-service]
-   (eventual 5 persistent-service))
+   (eventual 3 persistent-service))
   ([n persistent-service]
    (Eventual. (atom (vec (repeat n persistent-service))))))
 
@@ -260,7 +260,7 @@
   for each mutable service, and constructs a map used to shut down these
   services later."
   [net services]
-  (info "Starting services: " services)
+  (info "Starting services: " (sort (keys services)))
   (let [running? (atom true)
         workers (mapv (fn [[node-id service]]
                         (net/add-node! net node-id)
