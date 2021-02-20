@@ -6,6 +6,7 @@
 # linearizable store (lin-kv).
 
 require_relative 'node.rb'
+require 'zlib'
 
 # We store a single pointer (a string, uniquely generated) in a well-known key
 # in lin-kv:
@@ -55,9 +56,10 @@ class Tree
   # A map of pointers to locally cached Tree nodes.
   @@cache = {}
 
-  # Computes the hashring index of a key.
+  # Computes the hashring index of a key. Note that Ruby's .hash is wildly
+  # unstable from interpreter run to run.
   def self.hash(k)
-    k.hash % RING_SIZE
+    Zlib.crc32(k.to_s) % RING_SIZE
   end
 
   # Constructs a new empty leaf node that covers the whole hash space
