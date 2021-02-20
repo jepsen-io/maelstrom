@@ -43,10 +43,11 @@ require 'zlib'
 # the entire world unless necessary, so we create immutable Leaf and Branch
 # classes which lazily unpack their values as needed.
 
-VALUE_SVC = "lww-kv"
-PTR_SVC = "lin-kv"
 
 class Tree
+  # Where do we store our immutable values?
+  VALUE_SVC = "lww-kv"
+
   # Maximum size of the hash ring
   RING_SIZE = 128
 
@@ -123,22 +124,24 @@ class Tree
     end
   end
 
-  # Persist just this tree node to storage.
+  # Writes this node to storage. Returns a promise which is delivered once
+  # saved.
   def save_this!
-    if @saved
-      return true
+    p = Promise.new
+    @node.node.rpc!(VALUE_SVC, {
+      type: "write",
+      key: @ptr,
+      value: self.to_json
+    }) do |res|
+      body = res[:body]
+      if body[:type] == "write_ok"
+        p.deliver! true
+      else
+        p.deliver! false
+      end
     end
 
-    res = @node.node.sync_rpc! VALUE_SVC,
-      {type: "write", key: @ptr, value: self.to_json}
-
-    body = res[:body]
-    if body[:type] == "write_ok"
-      @saved = true
-      true
-    else
-      raise RPCError.abort "writing state failed"
-    end
+    p
   end
 
   def to_s
@@ -207,7 +210,16 @@ class Leaf < Tree
 
   # Saving a leaf node is simply saving the node itself.
   def save!
-    save_this!
+    return Promise.new.deliver!(true) if saved
+
+    p = save_this!
+    # Mark ourselves as saved once the write completes.
+    Thread.new do
+      if p.await
+        @saved = true
+      end
+    end
+    p
   end
 end
 
@@ -275,34 +287,48 @@ class Branch < Tree
      }}
   end
 
-  # To save a branch, we need to save it *and* all its unsaved children. It'd
-  # be faster to collect these into a set of promises and parallelize, but this
-  # is... already ridiculously complicated.
+  # To save a branch, we need to save it *and* all its unsaved children.
   def save!
+    return Promise.new.deliver!(true) if saved
+
+    # Fire off all of our saving tasks
+    tasks = []
     @branches.each do |upper, branch|
       if branch.is_a? Tree
-        branch.save!
+        tasks << branch.save!
       end
     end
-    # We can only save ourselves at the end, because that'll flip our saved
-    # flag and future searches will assume all our children are also
-    # persistent. If we want to parallelize this later, will need to rework
-    # this flag.
-    save_this!
+    tasks << save_this!
+
+    # Once saved, we can set our own status to saved.
+    p = Promise.new
+    Thread.new do
+      begin
+        if tasks.map(&:await).all?
+          # We succeeded
+          @saved = true
+          p.deliver! true
+        else
+          p.deliver! false
+        end
+      rescue RPCError => e
+        p.deliver! false
+      end
+    end
+    p
   end
 end
 
 class DatomicListAppendNode
   # Where do we store the root pointer to the entire DB tree?
   ROOT = "root"
+  ROOT_SVC = "lin-kv"
 
   attr_reader :node
 
   def initialize
     @node       = Node.new
     @ptr        = 0
-    @ptr_svc    = "lin-kv"
-    @value_svc  = "lww-kv"
     # A performance optimization to reduce contention on a single node.
     @txn_lock   = Mutex.new
 
@@ -310,8 +336,8 @@ class DatomicListAppendNode
       if @node.node_ids.first == @node.node_id
         # Write initial state.
         t = Tree.empty(self)
-        t.save!
-        @node.sync_rpc! @ptr_svc, type: "write", key: ROOT, value: t.ptr
+        t.save!.await or raise RPCError.abort "Couldn't write initial state"
+        @node.sync_rpc! ROOT_SVC, type: "write", key: ROOT, value: t.ptr
       end
     end
 
@@ -327,7 +353,7 @@ class DatomicListAppendNode
         @node.log "Final state is #{tree2}"
 
         if tree1.ptr != tree2.ptr
-          tree2.save!
+          tree2.save!.await or raise RPCError.abort "Couldn't save new tree"
           @node.log "State #{tree2.ptr} written"
 
           advance_root! tree1.ptr, tree2.ptr
@@ -347,7 +373,7 @@ class DatomicListAppendNode
 
   # Returns the current tree.
   def current_tree
-    res = @node.sync_rpc! @ptr_svc, {type: "read", key: ROOT}
+    res = @node.sync_rpc! ROOT_SVC, {type: "read", key: ROOT}
     body = res[:body]
     if body[:type] == "read_ok"
       return Tree.load self, body[:value]
@@ -358,7 +384,7 @@ class DatomicListAppendNode
   # Bumps the pointer atomically from p1 to p2. Returns iff pointer advanced;
   # throws otherwise.
   def advance_root!(p1, p2)
-    res = @node.sync_rpc! @ptr_svc, {type: "cas", key: ROOT, from: p1, to: p2}
+    res = @node.sync_rpc! ROOT_SVC, {type: "cas", key: ROOT, from: p1, to: p2}
     if res[:body][:type] == "cas_ok"
       true
     else

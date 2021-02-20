@@ -39,5 +39,6 @@ class Promise
     @lock.synchronize do
       @cvar.broadcast
     end
+    self
   end
 end
