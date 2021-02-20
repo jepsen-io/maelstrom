@@ -67,8 +67,7 @@ ruby 2.7.2p137 (2020-10-01 revision 5445e04352) [x86_64-linux-gnu]
 Let's make sure we can run one instance of the echo server. In the top-level `maelstrom/` directory, run:
 
 ```
-$ demo/echo/echo.rb
-Online
+$ demo/ruby/echo.rb
 ```
 
 The program should pause, awaiting input. If you like, you can type or paste a JSON message into the console, like so:
@@ -81,11 +80,11 @@ This should print
 
 ```
 Received {:src=>"c1", :dest=>"n1", :body=>{:msg_id=>1, :type=>"echo", :echo=>"hello there"}}
-Sent {:dest=>"c1", :src=>nil, :body=>{:msg_id=>1, :type=>"echo", :echo=>"hello there", :in_reply_to=>1}}
-{"dest":"c1","src":null,"body":{"msg_id":1,"type":"echo","echo":"hello there","in_reply_to":1}}
+Echoing {:msg_id=>1, :type=>"echo", :echo=>"hello there"}
+{"src":null,"dest":"c1","body":{"type":"echo_ok","echo":"hello there","msg_id":1,"in_reply_to":1}}
 ```
 
-The `Received` and `Sent` lines are informational logging, sent by the server
+The `Received` and `Echoing` lines are informational logging, sent by the server
 to stderr. The `{"dest": ...}` JSON message is the server's response to our
 request, printed on stdout. This is how Maelstrom will interact with our server.
 
@@ -94,7 +93,7 @@ Type `[Control] + [c]` to exit the server.
 Now, let's run Maelstrom, and ask it to test the server:
 
 ```
-lein run test -w echo --bin demo/echo/echo.rb --time-limit 5
+lein run test -w echo --bin demo/ruby/echo.rb --time-limit 5
 ```
 
 This starts a Maelstrom test with the `echo` workload. Maelstrom will generate
@@ -132,7 +131,7 @@ The results of this test are written to a directory in
 `store/<test-name>/<timestamp>/`; `store/latest` is a symlink to the most
 recently completed test. In that directory, you'll find:
 
-- 'n1.log`, `n2.log`, etc: The STDERR logs from each node
+- node-logs/n1.log, node-logs/n2.log, etc: The STDERR logs from each node
 - jepsen.log: The full log from the Maelstrom run
 - history.txt: The logical history of the system, as seen by clients
 - results.edn: Analysis results
@@ -143,8 +142,8 @@ You can browse these files using a file explorer, at the console, or via a web s
 
 ```sh
 lein run serve
-22:41:00.605 [main] INFO  jepsen.web - Web server running.
-22:41:00.608 [main] INFO  jepsen.cli - Listening on http://0.0.0.0:8080/
+14:19:07.048 [main] INFO jepsen.web - I'll see YOU after the function
+14:19:07.050 [main] INFO jepsen.cli - Listening on http://0.0.0.0:8080/
 ```
 
 Congratulations! You're ready to start writing your own systems!
