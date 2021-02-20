@@ -11,6 +11,10 @@
             [rhizome [dot :as rd]
                      [viz :as rv]]))
 
+(def message-limit
+  "Dali is pretty expensive; we stop rendering after this many messages."
+  8192)
+
 (defn all-nodes
   "Takes a journal and returns the collection of all nodes involved in it."
   [journal]
@@ -266,6 +270,7 @@
                         nodes)
         message-lines (->> journal
                            messages
+                           (take message-limit)
                            (map (partial message->dali-line+label
                                          width
                                          y-step
