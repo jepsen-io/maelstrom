@@ -95,7 +95,10 @@
    {:workload :broadcast,   :bin "demo/ruby/broadcast.rb"}
    {:workload :g-set,       :bin "demo/ruby/g_set.rb"}
    {:workload :pn-counter,  :bin "demo/ruby/pn_counter.rb"}
-   {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}])
+   {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}
+   {:workload :lin-kv       :bin "demo/ruby/lin_kv_proxy.rb", :concurrency 10}
+   {:workload :txn-list-append
+    :bin      "demo/ruby/datomic_list_append.rb"}])
 
 (defn demo-tests
   "Takes CLI options and constructs a sequence of tests to run which
