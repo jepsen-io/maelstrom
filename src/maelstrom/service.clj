@@ -234,7 +234,7 @@
   replicas of that service. Replicas periodically gossip state between them,
   using `merge` to compute new states."
   ([persistent-service]
-   (eventual 3 persistent-service))
+   (eventual 2 persistent-service))
   ([n persistent-service]
    (Eventual. (atom (vec (repeat n persistent-service))))))
 
@@ -252,6 +252,9 @@
               (net/send! net {:src  node-id
                               :dest (:src message)
                               :body body})))
+          (catch InterruptedException e
+            ; We're aborting
+            )
           (catch Exception e
             (warn e "Error in service worker!")))))))
 
@@ -260,7 +263,7 @@
   for each mutable service, and constructs a map used to shut down these
   services later."
   [net services]
-  (info "Starting services: " (sort (keys services)))
+  (info "Starting services:" (sort (keys services)))
   (let [running? (atom true)
         workers (mapv (fn [[node-id service]]
                         (net/add-node! net node-id)
