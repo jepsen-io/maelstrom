@@ -52,7 +52,7 @@ class Tree
   RING_SIZE = 128
 
   # Maximum number of elements per node
-  BRANCH_FACTOR = 2
+  BRANCH_FACTOR = 8
 
   # A map of pointers to locally cached Tree nodes.
   @@cache = {}
