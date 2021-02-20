@@ -14,8 +14,7 @@ class GCounter
   end
 
   def from_json(json)
-    # The JSON parser is gonna give us keywords here, but we want strings
-    GCounter.new json.transform_keys(&:to_s)
+    GCounter.new json
   end
 
   def to_json
@@ -57,8 +56,8 @@ class PNCounter
   end
 
   def from_json(json)
-    PNCounter.new(@inc.from_json(json[:inc]),
-                  @dec.from_json(json[:dec]))
+    PNCounter.new(@inc.from_json(json["inc"]),
+                  @dec.from_json(json["dec"]))
   end
 
   def to_json
