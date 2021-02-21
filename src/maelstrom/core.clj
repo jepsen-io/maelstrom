@@ -1,179 +1,132 @@
 (ns maelstrom.core
   (:gen-class)
   (:refer-clojure :exclude [run! test])
-  (:require [clojure.tools.logging :refer [info warn]]
-            [maelstrom [net :as net]
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :refer [info warn]]
+            [elle.consistency-model :as cm]
+            [maelstrom [client :as c]
+                       [db :as db]
+                       [doc :as doc]
+                       [net :as net]
+                       [nemesis :as nemesis]
                        [process :as process]]
-            [knossos.model :as model]
+            [maelstrom.net.journal :as net.journal]
+            [maelstrom.workload [broadcast :as broadcast]
+                                [echo :as echo]
+                                [g-set :as g-set]
+                                [pn-counter :as pn-counter]
+                                [lin-kv :as lin-kv]
+                                [txn-list-append :as txn-list-append]]
             [jepsen [checker :as checker]
                     [cli :as cli]
-                    [client :as client]
                     [core :as core]
-                    [control :as c]
-                    [db :as db]
                     [generator :as gen]
-                    [independent :as independent]
-                    [nemesis :as nemesis]
+                    [store :as store]
                     [tests :as tests]
-                    [util :as util :refer [timeout]]]
-            [jepsen.checker.timeline :as timeline]
-            [jepsen.control.util :as cu]))
+                    [util :as util :refer [timeout parse-long]]]
+            [jepsen.checker.timeline :as timeline]))
 
-(defn db
-  "Options:
+(def workloads
+  "A map of workload names to functions which construct workload maps."
+  {:broadcast       broadcast/workload
+   :echo            echo/workload
+   :g-set           g-set/workload
+   :pn-counter      pn-counter/workload
+   :lin-kv          lin-kv/workload
+   :txn-list-append txn-list-append/workload})
 
-      :bin - a binary to run
-      :args - args to that binary
-      :net - a network"
-  [opts]
-  (let [net (:net opts)
-        processes (atom {})]
-    (reify db/DB
-      (setup! [_ test node-id]
-        (info "Setting up" node-id)
-        (swap! processes assoc node-id
-               (process/start-node! {:node-id  node-id
-                                     :bin      (:bin opts)
-                                     :args     (:args opts)
-                                     :net      net
-                                     :dir      "/tmp"
-                                     :log-stderr? (:log-stderr test)
-                                     :log-file (str node-id ".log")}))
+(def nemeses
+  "A set of valid nemeses you can pass at the CLI."
+  #{:partition})
 
-        (let [client (net/sync-client! net)]
-          (try
-            (let [res (net/sync-client-send-recv!
-                        client
-                        {:dest node-id
-                         :body {:type "raft_init"
-                                :node_id node-id
-                                :node_ids (:nodes test)}}
-                        10000)]
-              (when (not= "raft_init_ok" (:type (:body res)))
-                (throw (RuntimeException.
-                         (str "Expected a raft_init_ok message, but node "
-                              node-id " returned "
-                              (pr-str res))))))
-            (finally (net/sync-client-close! client)))))
-
-
-      (teardown! [_ test node]
-        (when-let [p (get @processes node)]
-          (info "Tearing down" node)
-          (process/stop-node! p)
-          (swap! processes dissoc node))))))
-
-(def known-failure-codes
-  #{1 10 11 20 21 22})
-
-(defn error
-  "Takes an invocation operation and a response message for a client request.
-  If the response is an error, constructs an appropriate error operation.
-  Otherwise, returns nil."
-  [op msg]
-  (let [body (:body msg)]
-    (when (= "error" (:type body))
-      (let [type (if (known-failure-codes (:code body))
-                   :fail
-                   :info)]
-        (assoc op :type type, :error [(:code body) (:text body)])))))
-
-(defn client
-  "Construct a client for the given network"
-  ([net]
-   (client net nil nil))
-  ([net conn node]
-   (reify client/Client
-     (setup! [this test node]
-       (client net (net/sync-client! net) node))
-
-     (invoke! [_ test op]
-       (let [[k v]          (:value op)
-             client-timeout (max (* 10 (:latency test)) 1000)]
-         (case (:f op)
-           :read (let [res (net/sync-client-send-recv!
-                             conn
-                             {:dest node
-                              :body {:type "read", :key  k}}
-                             client-timeout)
-                       v (:value (:body res))]
-                   (or (error op res)
-                       (assoc op
-                              :type :ok
-                              :value (independent/tuple k v))))
-
-           :write (let [res (net/sync-client-send-recv!
-                              conn
-                              {:dest node
-                               :body {:type "write", :key k, :value v}}
-                              client-timeout)]
-                    (or (error op res)
-                        (assoc op :type :ok)))
-
-           :cas (let [[v v'] v
-                      res (net/sync-client-send-recv!
-                            conn
-                            {:dest node
-                             :body {:type "cas", :key k, :from v, :to v'}}
-                            client-timeout)]
-                  (or (error op res)
-                      (assoc op :type :ok))))))
-
-     (teardown! [_ test]
-       (net/sync-client-close! conn)))))
-
-(defn r   [_ _] {:type :invoke, :f :read, :value nil})
-(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 5)})
-(defn cas [_ _] {:type :invoke, :f :cas, :value [(rand-int 5) (rand-int 5)]})
-
-(defn test
-  "Construct a Jepsen test. Options:
-
-      :bin      Path to a binary to run
-      :args     Arguments to that binary"
-  [opts]
-  (let [net   (net/net (:latency opts)
+(defn maelstrom-test
+  "Construct a Jepsen test from parsed CLI options"
+  [{:keys [bin args nodes rate] :as opts}]
+  (let [nodes (if-let [nc (:node-count opts)]
+                (mapv (partial str "n") (map inc (range nc)))
+                (:nodes opts))
+        net   (net/net (:latency opts)
                        (:log-net-send opts)
                        (:log-net-recv opts))
-        nodes (:nodes opts)]
+        db            (db/db {:net net, :bin bin, :args args})
+        workload-name (:workload opts)
+        workload      ((workloads workload-name)
+                       (assoc opts :nodes nodes, :net net))
+        nemesis-package (nemesis/package {:db       db
+                                          :interval (:nemesis-interval opts)
+                                          :faults   (:nemesis opts)})
+        generator (->> (when (pos? rate)
+                         (gen/stagger (/ rate) (:generator workload)))
+                       (gen/nemesis (:generator nemesis-package))
+                       (gen/time-limit (:time-limit opts)))
+        ; If this workload has a final generator, end the nemesis, wait for
+        ; recovery, and perform final ops.
+        generator (if-let [final (:final-generator workload)]
+                    (gen/phases generator
+                                (gen/nemesis (:final-generator nemesis-package))
+                                (gen/log "Waiting for recovery...")
+                                (gen/sleep 10)
+                                (gen/clients final))
+                    generator)]
     (merge tests/noop-test
            opts
-           {:name    "maelstrom"
-            :ssh     {:dummy? true}
-            :db      (db {:net net
-                          :bin (:bin opts)
-                          :args []})
-            :client  (client net)
-            :nemesis (nemesis/partition-random-halves)
+           workload
+           {:name    (str (name workload-name))
             :nodes   nodes
+            :ssh     {:dummy? true}
+            :db      db
+            :nemesis (:nemesis nemesis-package)
             :net     (net/jepsen-adapter net)
-            :model   (model/cas-register)
+            :net-journal (:journal @net)
             :checker (checker/compose
-                       {:perf     (checker/perf)
-                        :timeline (independent/checker (timeline/html))
-                        :linear   (independent/checker checker/linearizable)})
-            :generator (->> (independent/concurrent-generator
-                              (count nodes)
-                              (range)
-                              (fn [k]
-                                (->> (gen/mix [r w cas])
-                                     (gen/stagger (/ (:rate opts)))
-                                     (gen/limit 100))))
-                            (gen/nemesis
-                              (gen/seq (cycle [(gen/sleep 10)
-                                               {:type :info, :f :start}
-                                               (gen/sleep 10)
-                                               {:type :info, :f :stop}])))
-                            (gen/time-limit (:time-limit opts)))})))
+                       {:perf       (checker/perf)
+                        :timeline   (timeline/html)
+                        :exceptions (checker/unhandled-exceptions)
+                        :stats      (checker/stats)
+                        :net        (net.journal/checker)
+                        :workload   (:checker workload)})
+            :generator generator
+            :pure-generators true})))
+
+(def demos
+  "A series of partial test options used to run demonstrations."
+  [{:workload :echo,        :bin "demo/ruby/echo.rb"}
+   {:workload :echo,        :bin "demo/ruby/echo_full.rb"}
+   {:workload :broadcast,   :bin "demo/ruby/broadcast.rb"}
+   {:workload :g-set,       :bin "demo/ruby/g_set.rb"}
+   {:workload :pn-counter,  :bin "demo/ruby/pn_counter.rb"}
+   {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}
+   {:workload :lin-kv       :bin "demo/ruby/lin_kv_proxy.rb", :concurrency 10}
+   {:workload :txn-list-append
+    :bin      "demo/ruby/datomic_list_append.rb"}])
+
+(defn demo-tests
+  "Takes CLI options and constructs a sequence of tests to run which
+  demonstrate various demo programs on assorted workloads. Useful for
+  self-tests."
+  [opts]
+  (for [demo demos]
+    (maelstrom-test (merge opts demo))))
 
 (def opt-spec
   "Extra options for the CLI"
   [[nil "--bin FILE"        "Path to binary which runs a node"]
 
-   [nil "--rate RATE" "Approximate number of request/sec/client"
-    :default  1
-    :parse-fn #(Double/parseDouble %)
-    :validate [pos? "Must be positive"]]
+   [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
+    :default [:strict-serializable]
+    :parse-fn (fn [s]
+                (map keyword (str/split #"\s+,\s+" s)))
+    :validate [(partial every? cm/friendly-model-name)
+               (cli/one-of (sort (map cm/friendly-model-name cm/all-models)))]]
+
+   [nil "--key-count INT" "For the append test, how many keys should we test at once?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
+
+   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
+    :default 0
+    :parse-fn parse-long
+    :validate [(complement neg?) "Must be non-negative"]]
 
    [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
@@ -184,10 +137,42 @@
    [nil "--log-stderr"      "Whether to log debugging output from nodes"
     :default false]
 
-   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
-    :default 0
-    :parse-fn #(Long/parseLong %)
-    :validate [(complement neg?) "Must be non-negative"]]])
+   [nil "--max-txn-length INT" "What's the most operations we can execute per transaction?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
+
+   [nil "--max-writes-per-key INT" "How many writes can we perform to any single key, for append tests?"
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
+
+   [nil "--node-count NUM" "How many nodes to run. Overrides --nodes, if given."
+    :default nil
+    :parse-fn parse-long
+    :validate? [pos? "Must be positive."]]
+
+   [nil "--nemesis FAULTS" "A comma-separated list of faults to inject."
+    :default #{}
+    :parse-fn (fn [string]
+                (->> (str/split string #"\s*,\s*")
+                     (map keyword)
+                     set))
+    :validate [(partial every? nemeses) (cli/one-of nemeses)]]
+
+   [nil "--nemesis-interval SECONDS" "How many seconds between nemesis operations, on average?"
+    :default  10
+    :parse-fn read-string
+    :validate [pos? "Must be positive"]]
+
+   [nil "--rate RATE" "Approximate number of request/sec/client"
+    :default  1
+    :parse-fn #(Double/parseDouble %)
+    :validate [(complement neg?) "Can't be negative"]]
+
+   ["-w" "--workload NAME" "What workload to run."
+    :default "lin-kv"
+    :parse-fn keyword
+    :validate [workloads (cli/one-of workloads)]]
+   ])
 
 (defn opt-fn
   "Options validation"
@@ -198,8 +183,17 @@
 
 (defn -main
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn test
-                                         :opt-spec opt-spec
-                                         :opt-fn opt-fn})
-                   (cli/serve-cmd))
+  (cli/run! (merge (cli/single-test-cmd {:test-fn   maelstrom-test
+                                         :opt-spec  opt-spec
+                                         :opt-fn    opt-fn})
+                   (cli/serve-cmd)
+                   ; This is basically a modified test-all command
+                   {"demo" (get (cli/test-all-cmd
+                                  {:opt-spec opt-spec
+                                   :tests-fn demo-tests})
+                                "test-all")}
+                   {"doc" {:opt-spec []
+                           :run (fn [opts]
+                                  (doc/write-docs!))}})
+
             args))
