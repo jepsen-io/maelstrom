@@ -18,21 +18,23 @@ class EchoServer
   end
 
   def main!
+    STDERR.puts "Online"
+
     while line = STDIN.gets
       req = JSON.parse line, symbolize_names: true
-      STDERR << "Received #{req.inspect}\n"
+      STDERR.puts "Received #{req.inspect}"
 
       body = req[:body]
       case body[:type]
         # Initialize this node
         when "init"
           @node_id = body[:node_id]
-          STDERR << "Initialized node #{@node_id}\n"
+          STDERR.puts "Initialized node #{@node_id}"
           reply! req, {type: :init_ok}
 
         # Send echoes back
         when "echo"
-          STDERR << "Echoing #{body}\n"
+          STDERR.puts "Echoing #{body}"
           reply! req, {type: "echo_ok", echo: body[:echo]}
       end
     end
