@@ -4,14 +4,14 @@
             [clojure.pprint :refer [pprint]]
             [clojure.java.io :as io]
             [clojure.tools.logging :refer [info warn]]
-            [dali [prefab :as df]
-                  [io :as dio]
-                  [syntax :as ds]]
+            [analemma [xml :as xml]
+                      [svg :as svg]]
             [maelstrom [util :as u]]))
 
-(def message-limit
-  "Dali is pretty expensive; we stop rendering after this many messages."
-  8192)
+(def journal-limit
+  "SVG rendering is pretty expensive; we stop rendering after this many
+  journal events."
+  10000)
 
 (defn all-nodes
   "Takes a journal and returns the collection of all nodes involved in it."
@@ -53,20 +53,50 @@
                           :message  message}
                          (messages froms (inc step) (next journal))))))))))
 
+;; SVG Rendering
+
+(defn layout
+  "Constructs a layout object with general information we need to position
+  messages in space."
+  [journal]
+  (let [width  800
+        y-step 20
+        truncated? (< journal-limit (count journal))
+        step-count (min journal-limit (count journal))
+        ; + 2 because our ys start at 1.5
+        ; + 1 for extra node line height at end
+        ; + 2 for truncation notice at end
+        ; + 2 for whitespace
+        height     (* y-step (+ 2 1 2 2 step-count))
+        nodes      (all-nodes journal)
+        ; A map of nodes to a horizontal index from the left
+        node-index (reduce (fn [node-index node]
+                             (assoc node-index node (count node-index)))
+                           {}
+                           nodes)]
+    {:width       width
+     :height      height
+     :step-count  step-count
+     :y-step      y-step
+     :truncated?  truncated?
+     :nodes       nodes
+     :node-index  node-index}))
+
 (defn x
   "Computes the x coordinate for a Dali plot."
-  [width node-index node]
-  (-> node
-      node-index
-      (+ 1/2)
-      (/ (count node-index))
-      (* width)
-      float))
+  [layout node]
+  (let [{:keys [width node-index]} layout]
+    (-> node
+        node-index
+        (+ 1/2)
+        (/ (count node-index))
+        (* width)
+        float)))
 
 (defn y
   "Computes the y index for an event."
-  [y-step step]
-  (float (* y-step (+ 1.5 step))))
+  [layout step]
+  (float (* (:y-step layout) (+ 1.5 step))))
 
 (defn message->color
   "Takes a message event and returns what color to use in drawing it."
@@ -96,17 +126,24 @@
   [rad]
   (-> rad (/ 2 Math/PI) (* 360)))
 
-(defn message->dali-line+label
-  "Converts a message to a Dali line and label"
-  [width y-step node-index message]
+(defn truncate-string
+  "Cuts a string to a maximum of n characters."
+  [string n]
+  (if (<= (.length string) n)
+    string
+    (str (subs string 0 (- n 1)) "…")))
+
+(defn message-line
+  "Converts a message to a line and label."
+  [layout message]
   (let [m (:message message)
         body (:body m)
         from (:from message)
         to (:to message)
-        x0 (x width node-index (:node from))
-        x1 (x width node-index (:node to))
-        y0 (y y-step (:step from))
-        y1 (y y-step (:step to))
+        x0 (x layout (:node from))
+        x1 (x layout (:node to))
+        y0 (y layout (:step from))
+        y1 (y layout (:step to))
         xmid (/ (+ x0 x1) 2)
         ymid (/ (+ y0 y1) 2)
         ; How long is the line gonna be? We draw this horizontally, then rotate
@@ -119,9 +156,8 @@
 
         label [:text {:text-anchor "middle"
                       :x (/ length 2)
-                      ; Should probably specify a font size and work this out
-                      ; properly
-                      :y (- (/ y-step 4))
+                      ; Just above line
+                      :y (- (/ (:y-step layout) 5))
                       ; Text will be upside down, so we flip it here
                       :transform (when left?
                                    (str "rotate(180 "(/ length 2) " 0)"))}
@@ -129,7 +165,10 @@
                " "
                (case (:type body)
                  "error" (:text body)
-                 (pr-str (dissoc body :type :msg_id :in_reply_to)))]]
+                 (-> body
+                     (dissoc :type :msg_id :in_reply_to)
+                     pr-str
+                     (truncate-string 48)))]]
     ; Recall that transforms are applied last to first, because they expand to
     ; effectively nested transforms
     [:g {:transform (str
@@ -137,12 +176,17 @@
                       "rotate(" angle ") "
                       )}
      ; Line
-     [:polyline {:points (str "0,0 " length ",0")
-                 :stroke (message->color message)
-                 :fill   (message->color message)
-                 :marker-end "url(#arrowhead)"}
+     [:rect {:x 0
+             :y -2.5
+             :height 5
+             ; Don't overshoot the arrowhead
+             :width  (- length 4)
+             :fill   (message->color message)}
       [:title (str (:src m) " → " (:dest m)
                    " " (pr-str (:body m)))]]
+     ; Arrowhead
+     [:use {"xlink:href" "#ahead", :x length, :y 0}]
+
      ; Label glow
      (-> label
         (assoc-in [1 :filter] "url(#glow)")
@@ -150,60 +194,112 @@
      ; Label proper
      label]))
 
-(defn plot-dali!
-  "Renders an SVG plot using Dali."
+(defn node-labels
+  "Takes a layout and renders the node names periodically"
+  [layout]
+  (cons :g
+        (for [node (:nodes layout)
+              step (range 0 (:step-count layout) 50)]
+          [:text {:x (x layout node)
+                  :y (y layout (- step 0.5))
+                  :text-anchor        "middle"
+                  :alignment-baseline "middle"
+                  :fill (if (zero? step) "#000" "#aaa")}
+                node])))
+
+(defn node-lines
+  "Takes a layout and renders the vertical gray lines for each node."
+  [layout journal]
+  (cons :g
+        (map (fn [node]
+               [:line {:stroke "#ccc"
+                       :x1 (x layout node)
+                       :y1 (y layout 0)
+                       :x2 (x layout node)
+                       :y2 (y layout (inc (:step-count layout)))}])
+             (:nodes layout))))
+
+(defn message-lines
+  "Takes a layout and a journal, and produces a set of lines for each message."
+  [layout journal]
+  (->> journal
+       (take journal-limit)
+       messages
+       (map (partial message-line layout))
+       (cons :g)))
+
+(defn truncated-notice
+  "Takes a layout and a journal, and renders a warning if we had to truncate
+  the journal in this rendering."
+  [layout journal]
+  (when (:truncated? layout)
+    (let [step (+ 2 (:step-count layout))
+          color "#D96918"]
+      [:g
+       [:line {:x1 30
+               :y1 (y layout step)
+               :x2 (- (:width layout) 30)
+               :y2 (y layout step)
+               :stroke-width 1
+               :stroke color}]
+       [:text {:x (/ (:width layout) 2)
+               :y (y layout (inc step))
+               :fill color
+               :text-anchor "middle"}
+        (str (- (count journal) journal-limit)
+             " later network events not shown")]])))
+
+(defn glow-filter
+  "A filter to make text stand out better by adding a white glow"
+  []
+  [:filter {:id "glow" :x "0" :y "0"}
+   [:feGaussianBlur {:in "SourceAlpha"
+                     :stdDeviation "2"
+                     :result "blurred"}]
+   [:feFlood {:flood-color "#fff"}]
+   [:feComposite {:operator "in" :in2 "blurred"}]
+   [:feComponentTransfer
+    [:feFuncA {:type "linear" :slope "10" :intercept 0}]]
+   [:feMerge
+    [:feMergeNode]
+    [:feMergeNode {:in "SourceGraphic"}]]])
+
+(defn arrowhead
+  "A little arrowhead def"
+  []
+  [:polygon {:id "ahead" :points "0 0, -12 4, -12 -4"}])
+
+(defn plot-analemma!
+  "Renders an SVG plot using Analemma. Hopefully faster than Dali, which uses
+  reflection EVERYWHERE."
   [journal filename]
-  (let [width 800
-        y-step 20
-        nodes (all-nodes journal)
-        ; Build a map of nodes to horizontal tracks
-        node-index (reduce (fn [node-index node]
-                             (assoc node-index node (count node-index)))
-                           {}
-                           nodes)
-        node-labels (map (fn [node]
-                           [:text {:x (x width node-index node)
-                                   :y (y y-step -0.5)
-                                   :text-anchor "middle"}
-                            node])
-                         nodes)
-        node-lines (map (fn [node]
-                          [:line {:stroke "#ccc"}
-                           [(x width node-index node)
-                            (y y-step 0)]
-                           [(x width node-index node)
-                            (y y-step (count journal))]])
-                        nodes)
-        message-lines (->> journal
-                           messages
-                           (take message-limit)
-                           (map (partial message->dali-line+label
-                                         width
-                                         y-step
-                                         node-index)))
-        doc   [:dali/page
-               [:defs
-                (ds/css (str "polyline {stroke-width: 2;}"))
-                (df/sharp-arrow-marker :sharp {:scale 1})
-                [:filter {:id "glow"}
-                 [:feGaussianBlur {:stdDeviation "1.5"
-                                   :result "glow"}]
-                 [:feMerge
-                  [:feMergeNode {:in "glow"}]
-                  [:feMergeNode {:in "glow"}]
-                  [:feMergeNode {:in "glow"}]
-                  [:feMergeNode {:in "glow"}]
-                  [:feMergeNode {:in "glow"}]
-                  [:feMergeNode {:in "glow"}]]]
-                [:marker {:id "arrowhead"
-                          :markerWidth 5
-                          :markerHeight 3.5
-                          :refX 5
-                          :refY 1.75
-                          :orient "auto"}
-                 [:polygon {:points "0 0, 5 1.75, 0 3.5"}]]]
-               node-labels
-               node-lines
-               message-lines]]
-    ;(pprint doc)
-    (dio/render-svg doc filename)))
+  (let [layout (layout journal)
+        svg (svg/svg {"version" "2.0"
+                      "width"  (+ (:width layout 50))
+                      "height" (:height layout)}
+              [:style "
+svg {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 11px;
+}
+rect {
+  stroke-linecap: butt;
+  stroke-width: 3;
+  stroke: #fff;
+/*  stroke-opacity: 1; */
+}
+rect:hover {
+  stroke: #fff;
+/*  stroke-opacity: 1; /*
+}
+polygon { fill: #000; }"
+               ]
+              [:defs
+               (arrowhead)
+               (glow-filter)]
+              (node-labels      layout)
+              (node-lines       layout journal)
+              (message-lines    layout journal)
+              (truncated-notice layout journal)
+              )]
+    (spit filename (xml/emit svg))))
