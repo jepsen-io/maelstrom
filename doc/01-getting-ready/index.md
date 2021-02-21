@@ -76,7 +76,7 @@ Online
 ```
 
 The program should pause, awaiting input. If you like, you can type or paste a
-[JSON message](doc/protocol.md) into the console, like so:
+[JSON message](/doc/protocol.md) into the console, like so:
 
 ```
 {"src": "c1", "dest": "n1", "body": {"msg_id": 1, "type": "echo", "echo": "hello there"}}
@@ -104,7 +104,7 @@ Now, let's run Maelstrom, and ask it to test the server:
 lein run test -w echo --bin demo/ruby/echo.rb --time-limit 5
 ```
 
-This starts a Maelstrom test with the `echo` [workload](/doc/workload.md).
+This starts a Maelstrom test with the `echo` [workload](/doc/workloads.md).
 Maelstrom will generate requests just like the JSON message we pasted into the
 server, and read responses back from each server. The `--bin` argument tells it
 which program to run for the server. `--time-limit 5` means that we'd like to
