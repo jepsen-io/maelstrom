@@ -7,9 +7,7 @@
             [dali [prefab :as df]
                   [io :as dio]
                   [syntax :as ds]]
-            [maelstrom [util :as u]]
-            [rhizome [dot :as rd]
-                     [viz :as rv]]))
+            [maelstrom [util :as u]]))
 
 (def message-limit
   "Dali is pretty expensive; we stop rendering after this many messages."
@@ -23,22 +21,6 @@
        (mapcat (juxt :src :dest))
        distinct
        u/sort-clients))
-
-(defn init-nodes
-  "Takes a set of node ids and generates initial dot nodes for them."
-  [nodes]
-  (map (fn [id]
-         {:node id
-          :step 0})
-       nodes))
-
-(defn step-nodes
-  "Takes a journal and a set of node ids, and generates a collection of dot
-  nodes for each node at each step of the journal."
-  [journal node-ids]
-  (for [step (range (count journal)), node-id node-ids]
-    {:node node-id
-     :step (inc step)}))
 
 (defn messages
   "Takes a journal and constructs a sequence of messages: each a map with
@@ -70,82 +52,6 @@
                                      :step step}
                           :message  message}
                          (messages froms (inc step) (next journal))))))))))
-
-(defn message-edges
-  "Takes a journal and constructs a map of dot nodes to dot edges,
-  corresponding to each message in the journal."
-  [journal]
-  (->> (messages journal)
-       (group-by :from)))
-
-(defn plot!
-  "Renders a journal to a file."
-  [journal filename]
-  (let [nodes         (all-nodes journal)
-        init-nodes    (init-nodes nodes)
-        step-nodes    (step-nodes journal nodes)
-        message-edges (message-edges journal)
-        max-step      (count journal)
-        ; Our node set is the initial states plus each step.
-        dot-nodes     (concat init-nodes step-nodes)
-        edges (fn edges [from]
-                ; Take each node, look up the messages outbound from that
-                ; node, and return their :to nodes.
-                (let [msg-edges (->> (get message-edges from)
-                                     (map :to))
-                      ; Do we have an edge to the next step, too?
-                      step-edge (when (< (:step from) max-step)
-                                  (-> from
-                                      (update :step inc)))]
-                  (cond-> msg-edges
-                    step-edge (conj step-edge))))
-        dot (rd/graph->dot dot-nodes
-                           edges
-
-                           :options {:rankdir "LR"
-                                     :splines "line"
-                                     :outputorder "nodesfirst"}
-
-                           :node->cluster
-                           (fn [node]
-;                             (if (zero? (:step node))
-;                               "process_names")
-                             (:node node))
-
-                           :cluster->descriptor
-                           (fn [cluster]
-                             {:rank     "same"
-                              :rankdir  "LR"
-                              :style    "invis"})
-
-                           :node->descriptor
-                           (fn [node]
-                             (if (zero? (:step node))
-                               {:group (:node node)
-                                :label (:node node)}
-                               {:group (:node node)
-                                :shape "point"
-                                :color "gray75"}))
-
-                           :edge->descriptor
-                           (fn [from to]
-                             ; Look up that edge, if one exists
-                             (let [edge (->> (get message-edges from)
-                                             (filter (comp #{to} :to))
-                                             first)]
-                               (if edge
-                                 ; A message
-                                 {:constraint false
-                                  ; :labelfloat true
-                                  ;:weight 3
-                                  :tooltip (pr-str (:body (:message edge)))
-                                  :label   (:type (:body (:message edge)))}
-                                 ; A step
-                                 {:weight 2
-                                  :arrowhead "none"
-                                  :color "gray75"}))))]
-    ; (println dot)
-    (-> dot rv/dot->image (rv/save-image filename))))
 
 (defn x
   "Computes the x coordinate for a Dali plot."
