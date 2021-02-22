@@ -1,7 +1,8 @@
 (ns maelstrom.process
   "Handles process spawning and IO"
   (:require [amalloy.ring-buffer :as ring-buffer]
-            [clojure.string :as str]
+            [clojure [pprint :refer [pprint]]
+                     [string :as str]]
             [clojure.java.io :as io]
             [clojure.tools.logging :refer [info warn]]
             [byte-streams :as bs]
@@ -44,10 +45,23 @@
                       (throw+ {:type :line-not-valid-json
                                :line line}
                               (str "Node " node-id
-                                   " printed a line to STDOUT which was not well-formed JSON:\n" line "\nDid you mean to encode this line as JSON? Or was this line intended for STDERR? See doc/protocol.md for more guidance."))))]
-  (-> parsed
-      keywordize-keys-1
-      (update :body keywordize-keys-1))))
+                                   " printed a line to STDOUT which was not well-formed JSON:\n" line "\nDid you mean to encode this line as JSON? Or was this line intended for STDERR? See doc/protocol.md for more guidance."))))
+        ; Convert string keys to keywords
+        message (-> parsed
+                    keywordize-keys-1
+                    (update :body keywordize-keys-1))]
+    ; Validate
+    (when-let [errors (net/check-message message)]
+      (throw+ {:type    :malformed-message
+               :message message
+               :error   errors}
+              (str "Malformed network message. Node " node-id
+                   " tried to send the following message via STDOUT:\n\n"
+                   (with-out-str (pprint message))
+                   "\nThis is malformed because:\n\n"
+                   (with-out-str (pprint errors))
+                   "\nSee doc/protocol.md for more guidance.")))
+    message))
 
 (defmacro io-thread
   "Spawns an IO thread for a process. Takes a running? atom, a node id, a

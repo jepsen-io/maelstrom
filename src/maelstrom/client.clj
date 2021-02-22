@@ -267,7 +267,8 @@
                  "\n\n"
                  (with-out-str (pprint body))
                  "\nThis is malformed because:\n\n"
-                 (with-out-str (pprint errs))))))
+                 (with-out-str (pprint errs))
+                 "\nSee doc/protocol.md for more guidance."))))
 
 (defn send-schema
   "Takes a partial schema for an RPC request, and enhances it to include a

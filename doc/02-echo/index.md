@@ -21,7 +21,7 @@ a JSON parser should work. :-)
 
 Maelstrom works with any kind of binary, feeding it network messages on
 stdin, receiving network messages from stdout, and logging information on
-stderr. The binary we're going to write is a ruby script, so open up a new
+stderr. The binary we're going to write is a Ruby script, so open up a new
 file in your favorite editor--let's call it `echo.rb`:
 
 ```rb
@@ -116,8 +116,12 @@ INFO [2021-02-08 10:34:21,262] node n1 - maelstrom.process Received {:dest=>"n1"
 ...
 ```
 
-Excellent. We've parsed the initialization message into a Ruby data structure.
-Now we can extract the node ID, and use it to initialize our own state.
+The test also crashes with `clojure.lang.ExceptionInfo: Expected node n1 to
+respond to an init message, but node did not respond.`, but that's all right
+for now: we'll send a response later.
+
+We've parsed the initialization message into a Ruby data structure. Now we can
+extract the node ID, and use it to initialize our own state.
 
 ```rb
   def main!
@@ -148,7 +152,7 @@ Excellent. Now we need to reply to Maelstrom, confirming our initialization.
 
 ## Sending a Reply
 
-We receive an initialization message of the form
+We receive an initialization message of the form:
 
 ```js
 {src: "c1",
@@ -159,12 +163,23 @@ We receive an initialization message of the form
         node_ids: ["n1"]}}
 ```
 
-We need to produce a reply to this message. Our reply will come from our node
-ID `n1`, and be sent to the client which originated this request: `c1`. Our
-message's body will have type `init_ok`, acknowledging the response. We also
-need our own locally unique `msg_id`. In order for the client to figure out
-that we're replying to this particular message, we'll need an `in_reply_to`
-field in our body, whose value is the `msg_id` of the init request.
+We [need to produce a reply](/doc/protocol.md) to this message with something
+like:
+
+```js
+{src: "n1",
+ dest: "c1",
+ body: {msg_id: 123
+        in_reply_to: 1
+        type: "init_ok"}}
+```
+
+Our reply will come from our node ID `n1`, and be sent to the client which
+originated this request: `c1`. Our message's body will have type `init_ok`,
+acknowledging the response. We also need our own locally unique `msg_id`. In
+order for the client to figure out that we're replying to this particular
+message, we'll need an `in_reply_to` field in our body, whose value is the
+`msg_id` of the init request.
 
 First things first: to generate unique `msg_id`s, we'll need an instance
 variable:
@@ -225,7 +240,7 @@ we initialized OK.
         when "init"
           @node_id = body[:node_id]
           STDERR << "Initialized node #{@node_id}\n"
-          reply! req, {type: :init_ok}
+          reply! req, {type: "init_ok"}
       end
     end
   end

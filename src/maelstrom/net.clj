@@ -9,6 +9,7 @@
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
+; Message validation
 (def NodeId
   "Node identifiers are represented as strings."
   String)
@@ -20,6 +21,10 @@
    :dest                NodeId
    :body                s/Any
    (s/optional-key :id) s/Int})
+
+(def check-message
+  "Returns schema errors on the given message, if any."
+  (s/checker Message))
 
 (defn latency-compare [a b]
   (compare (:deadline a) (:deadline b)))
