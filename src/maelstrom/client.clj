@@ -250,7 +250,9 @@
                          :send :malformed-rpc-request
                          :recv :malformed-rpc-response)
              :body     body
-             :error    errs}
+             ; Can't assoc this: it's not serializable.
+             ;:error    errs
+             }
             nil
             (str "Malformed RPC "
                  (case type
