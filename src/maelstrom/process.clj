@@ -41,77 +41,89 @@
       keywordize-keys-1
       (update :body keywordize-keys-1)))
 
+(defmacro io-thread
+  "Spawns an IO thread for a process. Takes a running? atom, a node id, a
+  thread name (e.g. \"stdin\"), [sym closable-expression ...] bindings (for
+  with-open), a single loop-recur binding, and a body. Spawns a future, holding
+  the closeable open, evaluating body in the loop-recur bindings as long as
+  `running?` is true, and catching/logging exceptions. Body should return the
+  next value for the loop iteration, or `nil` to terminate."
+  [running? node-id thread-type open-bindings loop-binding & body]
+  `(future
+     (with-thread-name (str ~node-id " " ~thread-type)
+       (with-open ~open-bindings
+         ; There is technically a race condition here: we might be interrupted
+         ; during evaluation of the loop bindings, *before* we enter the try.
+         ; Hopefully infrequent. If it happens, not the end of the world; just
+         ; yields a confusing error message, maybe some weird premature
+         ; closed-stream behavior.
+         (loop ~loop-binding
+           (if-not (deref ~running?)
+             ; We're done
+             :done
+             (recur (try ~@body
+                         (catch InterruptedException e#
+                           ; We might be interrupted if setup fails, but it's
+                           ; not our job to exit here--we need to keep the
+                           ; process's streams up and running so we can tell if
+                           ; it terminated normally. We'll be terminated by the
+                           ; DB teardown process.
+                           )
+                         (catch Throwable t#
+                           (warn t#))))))))))
+
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
-  [^Process p node-id debug-buffer log-writer log-stderr?]
-  (future
-    (with-thread-name (str node-id " stderr")
-      (with-open [log log-writer]
-        (doseq [line (bs/to-line-seq (.getErrorStream p))]
-          ; Console log
-          (when log-stderr? (info line))
-          ; File log
-          (.write log line)
-          (.write log "\n")
-          (.flush log)
-          ; Debugging buffer log
-          (swap! debug-buffer conj line)))
-      :stderr-done)))
+  [^Process p running? node-id debug-buffer log-writer log-stderr?]
+  (io-thread running? node-id "stderr"
+             [log log-writer]
+             [lines (bs/to-line-seq (.getErrorStream p))]
+             (when (seq lines)
+               (let [line (first lines)]
+                 ; Console log
+                 (when log-stderr? (info line))
+
+                 ; Debugging buffer log
+                 (swap! debug-buffer conj line)
+
+                 ; File log
+                 (.write log line)
+                 (.write log "\n")
+                 (.flush log)
+
+                 (next lines)))))
 
 (defn stdout-thread
   "Spawns a future which reads stdout from a process and inserts messages into
   the network."
-  [^Process p node-id debug-buffer net]
-  (future
-    (with-thread-name (str node-id " stdout")
-      (try
-        (doseq [line (bs/to-line-seq (.getInputStream p))]
-          ; Debugging buffer
-          (swap! debug-buffer conj line)
-          ; Parse and insert into network
-          (try
-            (let [parsed (-> line json/parse-string parse-msg)]
-              (try
-                (net/send! net parsed)
-                (catch java.lang.AssertionError e
-                  (when-not (re-find #"Invalid dest" (.getMessage e))
-                    (throw e))
-                  (warn "Discarding message for nonexistent node"
-                        (:dest parsed)))))
-            (catch InterruptedException e
-              (throw e))
-            (catch java.io.IOException e)
-            (catch Throwable e
-              (warn e "error processing stdout:\n" line))))
-        ; Interrupted? Shut down politely.
-        (catch InterruptedException e))
-      :stdout-done)))
+  [^Process p running? node-id debug-buffer net]
+  (io-thread running? node-id "stdout"
+             []
+             [lines (bs/to-line-seq (.getInputStream p))]
+             (when (seq lines)
+               (let [line (first lines)]
+                 ; Parse and insert into network
+                 (try+ (let [parsed (-> line json/parse-string parse-msg)]
+                         (net/send! net parsed)))
+
+                 ; Debugging buffer
+                 (swap! debug-buffer conj line)
+
+                 (next lines)))))
 
 (defn stdin-thread
   "Spawns a future which reads messages from the network and submits them to a
   process's stdin."
-  [^Process p node-id net running?]
-  (future
-    (with-thread-name (str node-id " stdin")
-      (try
-        (with-open [w (OutputStreamWriter. (.getOutputStream p))]
-          (while (deref running?)
-            (try
-              (when-let [msg (net/recv! net node-id 1000)]
-                (json/generate-stream msg w)
-                (.write w "\n")
-                (.flush w))
-              (catch java.io.IOException e)
-              (catch InterruptedException e
-                (throw e))
-              (catch Throwable e
-                (warn e "error processing stdin")))))
-        ; Interrupted? Shut down politely.
-        (catch InterruptedException e)
-        ; When we try to close the OutputStreamWriter, it'll try to write
-        ; to its underlying stream and throw *again*
-        (catch java.io.IOException e))
-      :stdin-done)))
+  [^Process p running? node-id net]
+  (io-thread running? node-id "stdin"
+             [w (OutputStreamWriter. (.getOutputStream p))]
+             [_ true]
+             (do (when-let [msg (net/recv! net node-id 1000)]
+                   (json/generate-stream msg w)
+                   (.write w "\n")
+                   (.flush w))
+                 ; We always recur; our input is unbounded.
+                 true)))
 
 (defn start-node!
   "Starts a node. Options:
@@ -156,10 +168,11 @@
      :log-file      (:log-file opts)
      :stderr-debug-buffer stderr-debug-buffer
      :stdout-debug-buffer stdout-debug-buffer
-     :stdin-thread  (stdin-thread  process node-id net running?)
-     :stderr-thread (stderr-thread process node-id stderr-debug-buffer log
-                                   (:log-stderr? opts))
-     :stdout-thread (stdout-thread process node-id stdout-debug-buffer net)}))
+     :stdin-thread  (stdin-thread  process running? node-id net)
+     :stderr-thread (stderr-thread process running? node-id stderr-debug-buffer
+                                   log (:log-stderr? opts))
+     :stdout-thread (stdout-thread process running? node-id stdout-debug-buffer
+                                   net)}))
 
 (defn stop-node!
   "Kills a node. Throws if the node already exited."
