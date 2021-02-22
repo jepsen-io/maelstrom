@@ -30,16 +30,24 @@
             m)))
 
 (defn parse-msg
-  "We may be dealing in arbitrary JSON payloads, and coercing all keys to
+  "Parses a line as a message, throwing appropriate exceptions.
+
+  We may be dealing in arbitrary JSON payloads, and coercing all keys to
   keywords may really mess up maps like {\"9\": true}. I don't know a rigorous
   way to eliminate this problem yet--schema.core's coercion might come in handy
   but I don't really underSTAND it yet. For right now, we convert just the keys
   in the message and body, to one level. Nothing is nested deeper than that
   anyway."
-  [message]
-  (-> message
+  [node-id line]
+  (let [parsed (try (json/parse-string line)
+                    (catch com.fasterxml.jackson.core.JsonParseException e
+                      (throw+ {:type :line-not-valid-json
+                               :line line}
+                              (str "Node " node-id
+                                   " printed a line to STDOUT which was not well-formed JSON:\n" line "\nDid you mean to encode this line as JSON? Or was this line intended for STDERR? See doc/protocol.md for more guidance."))))]
+  (-> parsed
       keywordize-keys-1
-      (update :body keywordize-keys-1)))
+      (update :body keywordize-keys-1))))
 
 (defmacro io-thread
   "Spawns an IO thread for a process. Takes a running? atom, a node id, a
@@ -70,7 +78,7 @@
                            ; DB teardown process.
                            )
                          (catch Throwable t#
-                           (warn t#))))))))))
+                           (warn t# "Error!"))))))))))
 
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
@@ -103,7 +111,7 @@
              (when (seq lines)
                (let [line (first lines)]
                  ; Parse and insert into network
-                 (try+ (let [parsed (-> line json/parse-string parse-msg)]
+                 (try+ (let [parsed (parse-msg node-id line)]
                          (net/send! net parsed)))
 
                  ; Debugging buffer
