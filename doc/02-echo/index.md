@@ -30,7 +30,7 @@ file in your favorite editor--let's call it `echo.rb`:
 class EchoServer
   def main!
     while line = STDIN.gets
-      STDERR << "Received #{line.inspect}\n"
+      STDERR.puts "Received #{line.inspect}"
     end
   end
 end
@@ -102,7 +102,7 @@ In the main loop, we'll parse each line we receive as JSON.
   def main!
     while line = STDIN.gets
       req = JSON.parse line, symbolize_names: true
-      STDERR << "Received #{req.inspect}\n"
+      STDERR.puts "Received #{req.inspect}"
     end
   end
 ```
@@ -127,14 +127,14 @@ extract the node ID, and use it to initialize our own state.
   def main!
     while line = STDIN.gets
       req = JSON.parse line, symbolize_names: true
-      STDERR << "Received #{req.inspect}\n"
+      STDERR.puts "Received #{req.inspect}"
 
       body = req[:body]
       case body[:type]
         # Initialize this node
         when "init"
           @node_id = body[:node_id]
-          STDERR << "Initialized node #{@node_id}\n"
+          STDERR.puts "Initialized node #{@node_id}"
       end
     end
   end
@@ -232,14 +232,14 @@ we initialized OK.
   def main!
     while line = STDIN.gets
       req = JSON.parse line, symbolize_names: true
-      STDERR << "Received #{req.inspect}\n"
+      STDERR.puts "Received #{req.inspect}"
 
       body = req[:body]
       case body[:type]
         # Initialize this node
         when "init"
           @node_id = body[:node_id]
-          STDERR << "Initialized node #{@node_id}\n"
+          STDERR.puts "Initialized node #{@node_id}"
           reply! req, {type: "init_ok"}
       end
     end
@@ -261,34 +261,44 @@ INFO [2021-02-08 11:17:57,850] node n1 - maelstrom.process Received {:dest=>"n1"
 WARN [2021-02-08 11:18:02,855] jepsen worker 0 - jepsen.generator.interpreter Process 0 crashed
 java.lang.RuntimeException: timed out
 ...
+
+Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
 ```
 
-We successfully initialized node n1! Maelstrom went on to send us a new kind of
-message: `{type: "echo", echo: "Please echo 29"}`. Now, we need to reply with
-an echo response.
+We successfully initialized node n1! After initializing, Maelstrom went on to
+send us a new kind of message: `{type: "echo", echo: "Please echo 29"}`. Those
+requests all timed out, because we didn't send back any responses. That caused
+Maelstrom to print `Analysis invalid!`: it's letting us know that something in
+our system looks broken. To fix that, we need to respond to those `echo`
+messages.
 
 ## Echo? Echo!
 
+The [Echo Workload](doc/workloads.md#workload-echo) defines a single kind of
+RPC request: clients send `type: echo` messages with an `echo: <some-string>`
+field, and expect `type: echo_ok` responses with that same `echo:
+<some-string>` back.
+
 We'll add a new case to our `main!` method, for responding to echo messages.
-All we have to do is send back the same body we were given:
+Let's try replying with the same body we were given:
 
 ```rb
   def main!
     while line = STDIN.gets
       req = JSON.parse line, symbolize_names: true
-      STDERR << "Received #{req.inspect}\n"
+      STDERR.puts "Received #{req.inspect}"
 
       body = req[:body]
       case body[:type]
         # Initialize this node
         when "init"
           @node_id = body[:node_id]
-          STDERR << "Initialized node #{@node_id}\n"
+          STDERR.puts "Initialized node #{@node_id}"
           reply! req, {type: :init_ok}
 
         # Send echoes back
         when "echo"
-          STDERR << "Echoing #{body}\n"
+          STDERR.puts "Echoing #{body}"
           reply! req, body
       end
     end
@@ -298,13 +308,51 @@ All we have to do is send back the same body we were given:
 Let's try that out:
 
 ```clj
+$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+...
+clojure.lang.ExceptionInfo: Malformed RPC response. Maelstrom sent node n1 the following request:
+
+{:echo "Please echo 45", :type "echo", :msg_id 1}
+
+And expected a response of the form:
+
+{:type (eq "echo_ok"),
+ :echo Any,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+
+... but instead received
+
+{:echo "Please echo 45", :type "echo", :msg_id 10, :in_reply_to 1}
+
+This is malformed because:
+
+{:type (not (= "echo_ok" "echo"))}
+
+See doc/protocol.md for more guidance.
+```
+
+Maelstrom checks the messages we send to make sure they match up with the
+expected format. We were *supposed* to respond with a body that had `type:
+"echo_ok"`, but instead we sent back `type: "echo"`. Why? Because we responded
+with the same body we took in! Let's fix that:
+
+```rb
+        when "echo"
+          STDERR.puts "Echoing #{body}"
+          reply! req, body.merge({type: "echo_ok"})
+```
+
+```clj
 $ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10
 ...
-INFO [2021-02-08 12:47:21,686] jepsen test runner - jepsen.core Relative time begins now
-INFO [2021-02-08 12:47:21,711] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 100"
-INFO [2021-02-08 12:47:21,720] jepsen worker 0 - jepsen.util 0	:ok	:echo	{:type "echo", :echo "Please echo 100", :msg_id 2, :in_reply_to 1}
-INFO [2021-02-08 12:47:23,256] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 27"
-INFO [2021-02-08 12:47:23,257] jepsen worker 0 - jepsen.util 0	:ok	:echo	{:type "echo", :echo "Please echo 27", :msg_id 3, :in_reply_to 2}
+INFO [2021-02-22 13:54:50,633] jepsen test runner - jepsen.core Relative time begins now
+INFO [2021-02-22 13:54:50,647] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 58"
+INFO [2021-02-22 13:54:50,668] jepsen worker 0 - jepsen.util 0	:ok	:echo	{:echo "Please echo 58", :type "echo_ok", :msg_id 2, :in_reply_to 1}
+INFO [2021-02-22 13:54:50,700] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 124"
+INFO [2021-02-22 13:54:50,702] jepsen worker 0 - jepsen.util 0	:ok	:echo	{:echo "Please echo 124", :type "echo_ok", :msg_id 3, :in_reply_to 2}
+INFO [2021-02-22 13:54:51,602] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 12"
+INFO [2021-02-22 13:54:51,605] jepsen worker 0 - jepsen.util 0	:ok	:echo	{:echo "Please echo 12", :type "echo_ok", :msg_id 4, :in_reply_to 3}
 ...
 ```
 
@@ -313,20 +361,27 @@ server. Each `:ok` line shows the body of the response that our echo server
 sent back. Our responses match the requested values, so Maelstrom logs:
 
 ```clj
-INFO [2021-02-08 12:47:32,080] jepsen test runner - jepsen.core {:perf {:latency-graph {:valid? true},
+INFO [2021-02-22 13:55:01,554] jepsen test runner - jepsen.core {:perf {:latency-graph {:valid? true},
         :rate-graph {:valid? true},
         :valid? true},
+ :timeline {:valid? true},
  :exceptions {:valid? true},
  :stats {:valid? true,
-         :count 8,
-         :ok-count 8,
+         :count 12,
+         :ok-count 12,
          :fail-count 0,
          :info-count 0,
          :by-f {:echo {:valid? true,
-                       :count 8,
-                       :ok-count 8,
+                       :count 12,
+                       :ok-count 12,
                        :fail-count 0,
                        :info-count 0}}},
+ :net {:stats {:all {:send-count 26, :recv-count 26, :msg-count 26},
+               :clients {:send-count 26,
+                         :recv-count 26,
+                         :msg-count 26},
+               :servers {:send-count 0, :recv-count 0, :msg-count 0}},
+       :valid? true},
  :workload {:valid? true, :errors ()},
  :valid? true}
 
@@ -334,32 +389,42 @@ INFO [2021-02-08 12:47:32,080] jepsen test runner - jepsen.core {:perf {:latency
 Everything looks good! ヽ(‘ー`)ノ
 ```
 
-Hurrah! We have an echo server! Let's try *changing* the response we send to
-see if Maelstrom notices.
+Hurrah! We have an echo server! It successfully performed 12 echo operations,
+and used 26 messages in the process (12 echo requests, 12 responses, plus one
+request and response for initialization). Let's try *changing* the response we
+send to see if Maelstrom notices.
 
 ```rb
         when "echo"
-          STDERR << "Echoing #{body}\n"
-          reply! req, {:echo "not-right"}
+          STDERR.puts "Echoing #{body}"
+          reply! req, body.merge({type: "echo_ok", echo: "not-right"})
 ```
 
 ```
 $ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10
 ...
  :workload {:valid? false,
-            :errors (["Expected a message with :type \"echo\", but received"
-                      {:echo "not-right", :msg_id 11, :in_reply_to 10}]
-                     ["Expected a message with :type \"echo\", but received"
-                      {:echo "not-right", :msg_id 4, :in_reply_to 3}]
+            :errors (["Expected a message with :echo"
+                      "Please echo 15"
+                      "But received"
+                      {:echo "not-right",
+                       :type "echo_ok",
+                       :msg_id 9,
+                       :in_reply_to 8}]
+                     ["Expected a message with :echo"
+                      "Please echo 20"
+                      "But received"
+                      {:echo "not-right",
+                       :type "echo_ok",
+                       :msg_id 5,
+                       :in_reply_to 4}]
                      ...
-
- :valid? false}
-
 
 Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
 ```
 
-Aha! So if we respond with a message of the wrong type, or with the wrong :echo
-value, Maelstrom detects the inconsistency and informs us at the end of the
-test. Each of Maelstrom's workloads uses different kinds of operations, and
-checks different kinds of properties on them. We'll see additional workloads in later chapters.
+Aha! So if we respond with the wrong value, Maelstrom detects the inconsistency
+and informs us at the end of the test. Each of Maelstrom's
+[workloads](/doc/workloads.md) uses different kinds of operations, and checks
+different kinds of properties on them. We'll see additional workloads in later
+chapters.
