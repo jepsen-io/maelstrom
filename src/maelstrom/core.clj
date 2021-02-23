@@ -42,9 +42,7 @@
 (defn maelstrom-test
   "Construct a Jepsen test from parsed CLI options"
   [{:keys [bin args nodes rate] :as opts}]
-  (let [nodes (if-let [nc (:node-count opts)]
-                (mapv (partial str "n") (map inc (range nc)))
-                (:nodes opts))
+  (let [nodes (:nodes opts)
         net   (net/net (:latency opts)
                        (:log-net-send opts)
                        (:log-net-recv opts))
@@ -174,22 +172,40 @@
     :validate [workloads (cli/one-of workloads)]]
    ])
 
-(defn opt-fn
-  "Options validation"
+(defn parse-node-count
+  "Takes the node-count option and generates a :nodes list in the parsed option
+  map, overriding whatever nodes are already there."
+  [parsed]
+  (if-let [n (:node-count (:options parsed))]
+    (assoc-in parsed [:options :nodes]
+              (mapv (partial str "n") (range n)))
+    parsed))
+
+(defn ensure-bin
+  "Checks to make sure the options map has a --bin argument"
   [parsed]
   (if-not (:bin (:options parsed))
     (update parsed :errors conj "Expected a --bin BINARY to test")
     parsed))
 
+(defn opt-fn
+  "Post-processes the parsed CLI options structure."
+  [parsed]
+  (-> parsed
+      parse-node-count
+      ensure-bin
+      cli/test-opt-fn))
+
 (defn -main
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn   maelstrom-test
                                          :opt-spec  opt-spec
-                                         :opt-fn    opt-fn})
+                                         :opt-fn*   opt-fn})
                    (cli/serve-cmd)
                    ; This is basically a modified test-all command
                    {"demo" (get (cli/test-all-cmd
                                   {:opt-spec opt-spec
+                                   :opt-fn*  opt-fn
                                    :tests-fn demo-tests})
                                 "test-all")}
                    {"doc" {:opt-spec []
