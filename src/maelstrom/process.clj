@@ -14,6 +14,7 @@
                       ProcessBuilder
                       ProcessBuilder$Redirect)
            (java.io File
+                    IOException
                     OutputStreamWriter)
            (java.util.concurrent TimeUnit)))
 
@@ -73,26 +74,42 @@
   [running? node-id thread-type open-bindings loop-binding & body]
   `(future
      (with-thread-name (str ~node-id " " ~thread-type)
-       (with-open ~open-bindings
-         ; There is technically a race condition here: we might be interrupted
-         ; during evaluation of the loop bindings, *before* we enter the try.
-         ; Hopefully infrequent. If it happens, not the end of the world; just
-         ; yields a confusing error message, maybe some weird premature
-         ; closed-stream behavior.
-         (loop ~loop-binding
-           (if-not (deref ~running?)
-             ; We're done
-             :done
-             (recur (try ~@body
-                         (catch InterruptedException e#
-                           ; We might be interrupted if setup fails, but it's
-                           ; not our job to exit here--we need to keep the
-                           ; process's streams up and running so we can tell if
-                           ; it terminated normally. We'll be terminated by the
-                           ; DB teardown process.
-                           )
-                         (catch Throwable t#
-                           (warn t# "Error!"))))))))))
+       (try
+         (with-open ~open-bindings
+           ; There is technically a race condition here: we might be
+           ; interrupted during evaluation of the loop bindings, *before* we
+           ; enter the try. Hopefully infrequent. If it happens, not the end of
+           ; the world; just yields a confusing error message, maybe some weird
+           ; premature closed-stream behavior.
+           (loop ~loop-binding
+             (if-not (deref ~running?)
+               ; We're done
+               :done
+               (recur (try ~@body
+                           (catch IOException e#
+                             ; If the process crashes, we're going to hit
+                             ; IOExceptions trying to write/read streams.
+                             ; That's fine--we're going to learn about crashes
+                             ; when the process shutdown code checks the exit
+                             ; status.
+                             )
+                           (catch InterruptedException e#
+                             ; We might be interrupted if setup fails, but it's
+                             ; not our job to exit here--we need to keep the
+                             ; process's streams up and running so we can tell
+                             ; if it terminated normally. We'll be terminated
+                             ; by the DB teardown process.
+                             )
+                           (catch Throwable t#
+                             (warn t# "Error!")
+                             nil))))))
+         (catch IOException e#
+           ; with-open is going to try to close things like OutputWriters,
+           ; which will actually throw if the process has crashed, because they
+           ; try to flush the underlying stream buffer, and THAT's closed. We
+           ; ignore that too; the process shutdown code will alert the user.
+           :crashed
+           )))))
 
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
