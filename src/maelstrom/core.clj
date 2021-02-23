@@ -166,6 +166,11 @@
     :parse-fn #(Double/parseDouble %)
     :validate [(complement neg?) "Can't be negative"]]
 
+   [nil "--topology SPEC" "What kind of network topology to offer to nodes, for those workloads (e.g. broadcast) which use one."
+    :parse-fn keyword
+    :default :grid
+    :validate [broadcast/topologies (cli/one-of broadcast/topologies)]]
+
    ["-w" "--workload NAME" "What workload to run."
     :default "lin-kv"
     :parse-fn keyword

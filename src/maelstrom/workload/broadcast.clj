@@ -5,6 +5,7 @@
   (:refer-clojure :exclude [read])
   (:require [clojure.pprint :refer [pprint]]
             [clojure.tools.logging :refer [info warn]]
+            [clojure.zip :as zip]
             [maelstrom [client :as c]
                        [net :as net]]
             [jepsen [checker :as checker]
@@ -62,12 +63,103 @@
          (remove nil?)
          (into {}))))
 
+(defn line-topology
+  "All nodes are arranged in a single line."
+  [test]
+  (let [nodes (vec (:nodes test))
+        n     (count nodes)]
+    (if (< n 2)
+      {}
+      (->> nodes
+           (partition 3 1)
+           (reduce (fn [m [left this right]]
+                     (assoc m this [left right]))
+                   ; First, last
+                   {(nodes 0)       [(nodes 1)]
+                    (nodes (- n 1)) [(nodes (- n 2))]})))))
+
+(defn total-topology
+  "Every node is connected to every other node."
+  [test]
+  (let [nodes (:nodes test)]
+    (->> nodes
+         (map (fn [node]
+                [node (remove #{node} nodes)]))
+         (into {}))))
+
+(defn vec->tree
+  "Converts a vec to a tree, where each node is encoded as (node & children),
+  or simply `[node]` at the leaves."
+  [b v]
+  (cond ; Empty range
+        (empty? v)
+        nil
+
+        ; Leaf node!
+        (= 1 (count v))
+        v
+
+        ; Branch node; chunk vector and recur.
+        :else
+        (let [rest-size  (dec (count v))
+              ; How big is each child chunk?
+              chunk-size (long (Math/ceil (/ rest-size b)))
+              ; Where do we cut?
+              cuts (->> (iterate (partial + chunk-size) 1)
+                        (take-while #(< % (count v))))
+              ; What are our children?
+              children (->> cuts
+                            (partition-all 2 1)
+                            (map (fn [[lower upper]]
+                                   (if upper
+                                     (subvec v lower upper)
+                                     (subvec v lower))))
+                            (map (partial vec->tree b)))]
+          (into [(first v)] children))))
+
+(defn tree-topology
+  "Arranges nodes into a tree with branch factor b."
+  [b test]
+  (let [nodes (:nodes test)
+        tree  (vec->tree b (vec nodes))]
+    (prn :tree tree)
+    (when tree
+      ; Run through the tree, using a zipper to grab children and parents.
+      (loop [loc       (zip/zipper (fn [node] (< 1 (count node)))
+                                   rest
+                                   cons
+                                   tree)
+             neighbors {}]
+        (if (or (nil? loc) (zip/end? loc))
+          neighbors
+          (let [me       (first (zip/node loc))
+                parent   (when-let [u (zip/up loc)] (first (zip/node u)))
+                children (when (zip/branch? loc)
+                           (->> (zip/children loc)
+                                (map first)))
+                my-neighbors (vec (if parent
+                                    (cons parent children)
+                                    children))]
+            (recur (zip/next loc)
+                   (assoc neighbors me my-neighbors))))))))
+
+(def topologies
+  "A map of topology names to functions which generate those topologies, given
+  a test."
+  {:line   line-topology
+   :grid   grid-topology
+   :tree   (partial tree-topology 2)
+   :tree2  (partial tree-topology 2)
+   :tree3  (partial tree-topology 3)
+   :tree4  (partial tree-topology 4)
+   :total  total-topology})
+
 (defn topology
   "Computes a topology map for the test: a map of nodes to the nodes which are
-  their immediate neighbors. By default, we arrange nodes into a
-  two-dimensional, roughly-square grid."
+  their immediate neighbors. Uses the :topology keyword in the test map."
   [test]
-  (grid-topology test))
+  (let [topo-fn (-> test :topology topologies)]
+    (topo-fn test)))
 
 (defn client
   ([net]

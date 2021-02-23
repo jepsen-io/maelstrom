@@ -9,8 +9,9 @@ require 'set'
 class BroadcastNode
   def initialize
     @node = Node.new
-    @messages = Set.new
     @neighbors = []
+    @lock = Mutex.new
+    @messages = Set.new
 
     @node.on "topology" do |msg|
       @neighbors = msg[:body][:topology][@node.node_id.to_sym]
@@ -19,21 +20,25 @@ class BroadcastNode
     end
 
     @node.on "read" do |msg|
-      @node.reply! msg, {type: "read_ok",
-                         messages: @messages.to_a}
+      @lock.synchronize do
+        @node.reply! msg, {type: "read_ok",
+                           messages: @messages.to_a}
+      end
     end
 
     @node.on "broadcast" do |msg|
       m = msg[:body][:message]
-      unless @messages.include? m
-        @messages.add m
-        @node.log "messages now #{@messages}"
+      @lock.synchronize do
+        unless @messages.include? m
+          @messages.add m
+          @node.log "messages now #{@messages}"
 
-        # Broadcast this message to neighbors (except whoever sent it to us)
-        @node.other_node_ids.each do |neighbor|
-          unless neighbor == msg[:src]
-            @node.rpc! neighbor, {type: "broadcast", message: m} do |res|
-              # Eh, whatever
+          # Broadcast this message to neighbors (except whoever sent it to us)
+          @node.other_node_ids.each do |neighbor|
+            unless neighbor == msg[:src]
+              @node.rpc! neighbor, {type: "broadcast", message: m} do |res|
+                # Eh, whatever
+              end
             end
           end
         end
