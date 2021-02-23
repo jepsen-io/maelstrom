@@ -96,7 +96,21 @@
   (reify checker/Checker
     (check [this test history opts]
       (let [journal (-> test :net-journal deref)
-            stats   (t/tesser (tu/chunk-vec 65536 journal) stats)]
+            stats   (t/tesser (tu/chunk-vec 65536 journal) stats)
+            ; Add msgs-per-op stats, so we can tell roughly how many messages
+            ; exchanged per logical operation
+            op-count (->> history
+                          (remove (comp #{:nemesis} :process))
+                          (filter (comp #{:invoke} :type))
+                          count)
+            stats   (-> stats
+                        (assoc-in [:all :msgs-per-op]
+                                  (float (/ (:msg-count (:all stats))
+                                            op-count)))
+                        (assoc-in [:servers :msgs-per-op]
+                                  (float (/ (:msg-count (:servers stats))
+                                            op-count))))]
+
         ; Generate a plot
         (viz/plot-analemma! (without-init journal)
                             (store/path! test "messages.svg"))
