@@ -32,8 +32,9 @@
      (setup! [this test])
 
      (invoke! [_ test op]
-       (try+ (let [res (echo! conn node {:echo (:value op)})]
-               (assoc op :type :ok, :value res))))
+       (c/with-errors op #{}
+         (try+ (let [res (echo! conn node {:echo (:value op)})]
+                 (assoc op :type :ok, :value res)))))
 
      (teardown! [_ test])
 
