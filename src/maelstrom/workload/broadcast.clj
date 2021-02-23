@@ -82,15 +82,16 @@
          (topology! conn node {:type :topology, :topology topo})))
 
      (invoke! [_ test op]
-       (case (:f op)
-         :broadcast
-         (do (broadcast! conn node {:type :broadcast, :message (:value op)})
-             (assoc op :type :ok))
+       (c/with-errors op #{:read}
+         (case (:f op)
+           :broadcast
+           (do (broadcast! conn node {:type :broadcast, :message (:value op)})
+               (assoc op :type :ok))
 
-         :read
-         (->> (read conn node {:type :read})
-              :messages
-              (assoc op :type :ok, :value))))
+           :read
+           (->> (read conn node {:type :read})
+                :messages
+                (assoc op :type :ok, :value)))))
 
      (teardown! [_ test])
 
