@@ -5,7 +5,7 @@ require_relative 'promise.rb'
 require_relative 'errors.rb'
 
 class Node
-  attr_accessor :node_id, :node_ids
+  attr_reader :node_id, :node_ids
 
   def initialize
     @node_id = nil
@@ -17,8 +17,6 @@ class Node
     @every_tasks = []
     @lock = Monitor.new
     @log_lock = Mutex.new
-
-    @in_buffer = ""
 
     # Register an initial handler for the init message
     on "init" do |msg|
@@ -163,24 +161,16 @@ class Node
         end
       end
 
-      # Ruby doesn't close over variables assigned in `while` scope, which
-      # means every worker thread will actually operate on the *same* msg. To
-      # safely close over message, we use a promise and refuse to move on until
-      # the worker thread has cloned the current message.
-      started = Promise.new
-      Thread.new do
-        m = msg.clone
-        started.deliver! nil
+      Thread.new(msg) do |msg|
         begin
-          handler.call m
+          handler.call msg
         rescue RPCError => e
-          reply! m, e.to_json
+          reply! msg, e.to_json
         rescue => e
-          log "Exception handling #{m}:\n#{e.full_message}"
-          reply! m, RPCError.crash(e.full_message).to_json
+          log "Exception handling #{msg}:\n#{e.full_message}"
+          reply! msg, RPCError.crash(e.full_message).to_json
         end
       end
-      started.await
     end
   end
 end

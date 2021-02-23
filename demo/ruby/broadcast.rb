@@ -14,7 +14,7 @@ class BroadcastNode
 
     @node.on "topology" do |msg|
       @neighbors = msg[:body][:topology][@node.node_id.to_sym]
-      STDERR.puts "My neighbors are #{@neighbors.inspect}"
+      @node.log "My neighbors are #{@neighbors.inspect}"
       @node.reply! msg, {type: "topology_ok"}
     end
 
@@ -27,7 +27,7 @@ class BroadcastNode
       m = msg[:body][:message]
       unless @messages.include? m
         @messages.add m
-        STDERR.puts "messages now #{@messages}"
+        @node.log "messages now #{@messages}"
 
         # Broadcast this message to neighbors (except whoever sent it to us)
         @node.other_node_ids.each do |neighbor|
