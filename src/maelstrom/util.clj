@@ -6,8 +6,8 @@
 
 (defn client?
   "Is a given node id a client?"
-  [node-id]
-  (re-find #"^c" node-id))
+  [^String node-id]
+  (= \c (.charAt node-id 0)))
 
 (defn involves-client?
   "Does a given network message involve a client?"

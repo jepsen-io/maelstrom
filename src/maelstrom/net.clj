@@ -3,6 +3,7 @@
   selective packet loss, and long-lasting partitions."
   (:require [clojure.tools.logging :refer [info warn]]
             [jepsen.net :as net]
+            [maelstrom [util :as u]]
             [maelstrom.net.journal :as j]
             [slingshot.slingshot :refer [try+ throw+]]
             [schema.core :as s]
@@ -154,14 +155,24 @@
             (str "Invalid dest for message " (pr-str m))))
   m)
 
+(defn ^Long latency-for
+  "Computes a latency, in ms, for a given message. We want our clients to have
+  effectively zero latency whenever possible--as if colocated with nodes.
+  Adding latency to them tends to *hide* consistency anomalies, so we avoid it.
+  Later we might want to add an option for a separate client latency
+  distribution, just for latency simulation purposes?"
+  [net message]
+  (if (u/involves-client? message)
+    0
+    (long (draw (:latency-dist net)))))
+
 (defn send!
   "Sends a message into the network. Message must contain :src and :dest keys,
   both node IDs. Generates an :id for the message. Mutates and returns the
   network."
   [net message]
   (validate-msg net message)
-  (let [{:keys [log-send? p-loss journal latency-dist
-                next-message-id]} @net
+  (let [{:keys [log-send? p-loss journal next-message-id] :as n} @net
         ; Assign a new message ID for our internal bookkeeping
         message (assoc message :id (swap! next-message-id inc))]
 
@@ -177,9 +188,8 @@
       (let [src  (:src message)
             dest (:dest message)
             q    (queue-for net dest)]
-        (.put q {:deadline (-> latency-dist
-                               draw
-                               long
+        (.put q {:deadline (-> n
+                               (latency-for message)
                                (* 1000000) ; ms -> ns
                                (+ (System/nanoTime)))
                  :message message})
