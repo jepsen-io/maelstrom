@@ -461,7 +461,7 @@ INFO [2021-02-24 17:19:14,814] jepsen worker 3 - jepsen.util 8	:invoke	:broadcas
 INFO [2021-02-24 17:19:15,598] jepsen worker 0 - jepsen.util 0	:fail	:read	nil	:net-timeout
 INFO [2021-02-24 17:19:15,599] jepsen worker 0 - jepsen.util 0	:invoke	:read	nil
 INFO [2021-02-24 17:19:16,217] jepsen worker 1 - jepsen.util 1	:info	:broadcast	3	:net-timeout
-$
+```
 
 Well this is odd. We're seeing timeouts for requests which *should* have responded immediately. What are those nodes doing? Let's check the node logs:
 
