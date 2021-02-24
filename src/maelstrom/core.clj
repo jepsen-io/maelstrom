@@ -108,7 +108,8 @@
 
 (def opt-spec
   "Extra options for the CLI"
-  [[nil "--bin FILE"        "Path to binary which runs a node"]
+  [[nil "--bin FILE"        "Path to binary which runs a node"
+    :missing "Expected a --bin PATH_TO_BINARY to test"]
 
    [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
     :default [:strict-serializable]
@@ -121,10 +122,16 @@
     :parse-fn parse-long
     :validate [pos? "must be positive"]]
 
-   [nil "--latency MILLIS"  "Maximum (normal) network latency, in ms"
+   [nil "--latency MILLIS"  "Mean network latency under normal operation, in ms"
     :default 0
     :parse-fn parse-long
     :validate [(complement neg?) "Must be non-negative"]]
+
+   [nil "--latency-dist TYPE" "Kind of latency distribution to use."
+    :default :constant
+    :parse-fn keyword
+    :validate [#{:constant :uniform :exponential}
+               "Must be constant, uniform, or exponential"]]
 
    [nil "--log-net-send"    "Log packets as they're sent"
     :default false]
@@ -146,7 +153,7 @@
    [nil "--node-count NUM" "How many nodes to run. Overrides --nodes, if given."
     :default nil
     :parse-fn parse-long
-    :validate? [pos? "Must be positive."]]
+    :validate [pos? "Must be positive."]]
 
    [nil "--nemesis FAULTS" "A comma-separated list of faults to inject."
     :default #{}
@@ -186,19 +193,22 @@
               (mapv (partial str "n") (range n)))
     parsed))
 
-(defn ensure-bin
-  "Checks to make sure the options map has a --bin argument"
+(defn parse-latency
+  "Moves latency and latency-dist into their own :latency map."
   [parsed]
-  (if-not (:bin (:options parsed))
-    (update parsed :errors conj "Expected a --bin BINARY to test")
-    parsed))
+  (let [o (:options parsed)]
+    (assoc parsed :options
+           (-> o
+               (assoc :latency {:mean (:latency o)
+                                :dist (:latency-dist o)})
+               (dissoc :latency-dist)))))
 
 (defn opt-fn
   "Post-processes the parsed CLI options structure."
   [parsed]
   (-> parsed
+      parse-latency
       parse-node-count
-      ensure-bin
       cli/test-opt-fn))
 
 (defn -main

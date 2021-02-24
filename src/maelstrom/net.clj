@@ -5,7 +5,12 @@
             [jepsen.net :as net]
             [maelstrom.net.journal :as j]
             [slingshot.slingshot :refer [try+ throw+]]
-            [schema.core :as s])
+            [schema.core :as s]
+            [incanter.distributions :as dist
+             :refer [Distribution
+                     draw
+                     exponential-distribution
+                     integer-distribution]])
   (:import (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
@@ -29,22 +34,61 @@
 (defn latency-compare [a b]
   (compare (:deadline a) (:deadline b)))
 
+(defrecord ConstantDistribution [x]
+  Distribution
+  (draw [this] x))
+
+(defn constant-dist
+  "A constant distribution: always x"
+  [x]
+  (ConstantDistribution. x))
+
+(defrecord ScaledDistribution [d scale]
+  Distribution
+  (draw [this] (* scale (dist/draw d))))
+
+(defn scale-dist
+  "Scales a distribution linearly by `scale`"
+  [d scale]
+  (ScaledDistribution. d scale))
+
+(defn unscale-dist
+  "Unwrap a ScaledDistribution."
+  [sd]
+  (:d sd))
+
+(defn latency-dist
+  "Takes options:
+
+    :mean   The mean latency
+    :dist   The shape of the distribution of latencies injected
+
+  and yields an Incanter distribution, used to generate latencies for each
+  message."
+  [{:keys [dist mean]}]
+  (case dist
+    :constant     (constant-dist mean)
+    :uniform      (integer-distribution 0 (* 2 mean))
+    :exponential  (exponential-distribution (/ mean))))
+
 (defn net
-  "Construct a new network. Takes a characteristic latency in ms, which is
-  the longest packets will ordinarily be delayed.
+  "Construct a new network. Takes a latency specification map (see
+  latency-dist).
 
       :queues      A map of receiver node ids to PriorityQueues
       :journal     A mutable log for network messages
       :p-loss      The probability of any given message being lost
       :partitions  A map of receivers to collections of sources. If a
                    source/receiver pair exists, receiver will drop packets
-                   from source."
+                   from source.
+      :latency-dist   An incanter distribution used to generate latencies
+                      for messages"
   [latency log-send? log-recv?]
   (atom {:queues          {}
          :journal         (j/journal)
          :log-send?       log-send?
          :log-recv?       log-recv?
-         :latency         latency
+         :latency-dist    (latency-dist latency)
          :p-loss          0
          :partitions      {}
          :next-client-id  -1
@@ -61,13 +105,13 @@
       (swap! net assoc :partitions {}))
 
     (slow! [_ test]
-      (swap! net update :latency * 10))
+      (swap! net update :latency-dist scale-dist 10))
 
     (fast! [_ test]
-      (swap! net update :latency / 10))
+      (swap! net update :latency-dist unscale-dist))
 
     (flaky! [_ test]
-      (swap! net update :p-loss 0.5))))
+      (swap! net assoc :p-loss 0.5))))
 
 (defn add-node!
   "Adds a node to the network."
@@ -116,7 +160,8 @@
   network."
   [net message]
   (validate-msg net message)
-  (let [{:keys [log-send? p-loss journal latency next-message-id]} @net
+  (let [{:keys [log-send? p-loss journal latency-dist
+                next-message-id]} @net
         ; Assign a new message ID for our internal bookkeeping
         message (assoc message :id (swap! next-message-id inc))]
 
@@ -132,7 +177,11 @@
       (let [src  (:src message)
             dest (:dest message)
             q    (queue-for net dest)]
-        (.put q {:deadline (+ (System/nanoTime) (long (rand (* latency 1e6))))
+        (.put q {:deadline (-> latency-dist
+                               draw
+                               long
+                               (* 1000000) ; ms -> ns
+                               (+ (System/nanoTime)))
                  :message message})
         net))))
 
