@@ -168,8 +168,8 @@
     :parse-fn read-string
     :validate [pos? "Must be positive"]]
 
-   [nil "--rate RATE" "Approximate number of request/sec/client"
-    :default  1
+   [nil "--rate RATE" "Approximate number of request/sec"
+    :default  5
     :parse-fn #(Double/parseDouble %)
     :validate [(complement neg?) "Can't be negative"]]
 
