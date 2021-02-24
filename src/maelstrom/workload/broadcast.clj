@@ -87,42 +87,64 @@
                 [node (remove #{node} nodes)]))
          (into {}))))
 
-(defn vec->tree
-  "Converts a vec to a tree, where each node is encoded as (node & children),
-  or simply `[node]` at the leaves."
-  [b v]
-  (cond ; Empty range
-        (empty? v)
-        nil
+(defn tier-sizes
+  "Gives the sizes for each tier of a tree with branch factor b: 1, b, b^2,
+  ..."
+  [b]
+  (iterate (partial * b) 1))
 
-        ; Leaf node!
-        (= 1 (count v))
-        v
+(defn tiers
+  "Takes a sequence of elements and chunks it into tiers for a b-wide tree, starting with the root."
+  [b xs]
+  (loop [xs     xs
+         tiers  []
+         sizes  (tier-sizes b)]
+    (if-not (seq xs)
+      ; Done!
+      tiers
+      (let [[size & sizes'] sizes]
+        (recur (drop size xs)
+               (conj tiers (take size xs))
+               (next sizes))))))
 
-        ; Branch node; chunk vector and recur.
-        :else
-        (let [rest-size  (dec (count v))
-              ; How big is each child chunk?
-              chunk-size (long (Math/ceil (/ rest-size b)))
-              ; Where do we cut?
-              cuts (->> (iterate (partial + chunk-size) 1)
-                        (take-while #(< % (count v))))
-              ; What are our children?
-              children (->> cuts
-                            (partition-all 2 1)
-                            (map (fn [[lower upper]]
-                                   (if upper
-                                     (subvec v lower upper)
-                                     (subvec v lower))))
-                            (map (partial vec->tree b)))]
-          (into [(first v)] children))))
+(defn seq->tree
+  "Converts a sequence of elements xs to a tree where each node is encoded as
+  (x & children). Leaves are [x]. Maximum b children per node."
+  [b xs]
+  ; Break up xs into tiers.
+  (let [tiers (tiers b xs)]
+    ; Tiers is a sequence of tiers of nodes, like so:
+    ;
+    ; [          root        ]
+    ; [     a           b    ]
+    ; [  c    d      e    f  ]
+    ; [ g h  i j    k l  m n ]
+    ;
+    ; We're going to zip from bottom to top, replacing nodes in the bottom tier
+    ; with [parent & children] lists. Leaf nodes should be encoded as (node),
+    ; so we tack on a nil tier at the very bottom.
+    (loop [tiers (cons nil (reverse tiers))]
+      (if (<= (count tiers) 1)
+        ; We've reduced this to the root.
+        (first (first tiers))
+        ; Look at the bottom two tiers: children and their parents
+        (let [[children parents & above] tiers
+              ; Chunk the children up so they correspond to parents, and tack
+              ; on an infinite series of nils if the tier isn't full.
+              children (concat (partition-all b children)
+                               (repeat nil))
+              ; Zip parents and children together into a new tier
+              tier' (map (fn [parent children]
+                           (cons parent children))
+                         parents children)]
+          ; Replace these two bottom tiers with our new tier, and recur
+          (recur (cons tier' above)))))))
 
 (defn tree-topology
   "Arranges nodes into a tree with branch factor b."
   [b test]
   (let [nodes (:nodes test)
-        tree  (vec->tree b (vec nodes))]
-    (prn :tree tree)
+        tree  (seq->tree b nodes)]
     (when tree
       ; Run through the tree, using a zipper to grab children and parents.
       (loop [loc       (zip/zipper (fn [node] (< 1 (count node)))
