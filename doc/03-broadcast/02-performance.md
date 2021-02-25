@@ -490,9 +490,9 @@ produce more understandable stacktraces, and reduce deeply nested continuation
 blocks.
 
 The change we need to make is straightforward: spawn a thread for each request
-the mainloop handles. The `Thread.new(msg) do |msg|` notation ensures that this
-thread closes over a fixed value of `msg`, rather than sharing it as the
-mainloop goes onto the next message.
+the mainloop handles. The `Thread.new(handler, msg) do |handler, msg|` notation
+ensures that this thread closes over fixed values of `handler` and `msg`,
+rather than sharing them as the mainloop goes onto the next message.
 
 ```rb
   # Loops, processing messages from STDIN
@@ -500,7 +500,7 @@ mainloop goes onto the next message.
     ...
 
       # Actually handle message
-      Thread.new(msg) do |msg|
+      Thread.new(handler, msg) do |handler, msg|
         begin
           handler.call msg
         rescue => e

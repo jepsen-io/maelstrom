@@ -161,7 +161,7 @@ class Node
         end
       end
 
-      Thread.new(msg) do |msg|
+      Thread.new(handler, msg) do |handler, msg|
         begin
           handler.call msg
         rescue RPCError => e

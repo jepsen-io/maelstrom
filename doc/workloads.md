@@ -23,6 +23,7 @@ messages that you'll need to handle.
 
 - [Broadcast](#workload-broadcast)
 - [Echo](#workload-echo)
+- [G-counter](#workload-g-counter)
 - [G-set](#workload-g-set)
 - [Lin-kv](#workload-lin-kv)
 - [Pn-counter](#workload-pn-counter)
@@ -120,6 +121,57 @@ Response:
 ```clj
 {:type (eq "echo_ok"),
  :echo Any,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+
+## Workload: G-counter 
+
+An eventually-consistent grow-only counter, which supports increments.
+Validates that the final read on each node has a value which is the sum of
+all known (or possible) increments.
+
+See also: pn-counter, which is identical, but allows decrements. 
+
+### RPC: Add! 
+
+Adds a non-negative integer, called `delta`, to the counter. Servers should
+respond with an `add_ok` message. 
+
+Request:
+
+```clj
+{:type (eq "add"), :delta Int, :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "add_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Read 
+
+Reads the current value of the counter. Servers respond with a `read_ok`
+message containing a `value`, which should be the sum of all (known) added
+deltas. 
+
+Request:
+
+```clj
+{:type (eq "read"), :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "read_ok"),
+ :value Int,
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
@@ -247,7 +299,9 @@ Response:
 
 An eventually-consistent counter which supports increments and decrements.
 Validates that the final read on each node has a value which is the sum of
-all known (or possible) increments and decrements. 
+all known (or possible) increments and decrements.
+
+See also: g-counter, which is identical, but does not allow decrements. 
 
 ### RPC: Add! 
 
