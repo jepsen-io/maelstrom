@@ -1,19 +1,21 @@
 # Counters
 
-The [p-counter workload](/doc/workloads.md#workload-pn-counter) defines a
-basic API for a single counter. Clients issue `add` operations to increment the
+In this section, we'll build an eventually consistent counter which supports
+increments, then extend it to support decrements as well.
+
+## G-Counter
+
+The [G-counter workload](/doc/workloads.md#workload-g-counter) defines a basic
+API for a single counter. Clients issue `add` operations to increment the
 counter value, and `read` operations to get the current counter value.
 Maelstrom expects that the counter's final value is equal to the sum of all
 adds (taking into account that some increments may or may not have happened).
 
-## G-Counter
-
 We're going to copy our G-set server, and replace its set with a grow-only
-counter: a G-counter. Later, we'll extend that counter to support decrements as
-well: a PN-counter.
+counter: a G-counter.
 
 ```sh
-cp g_set.rb pn_counter.rb
+cp g_set.rb counter.rb
 ```
 
 Just like we defined a `GSet` class for representing grow-only sets, we'll
@@ -128,7 +130,7 @@ CounterServer.new.node.main!
 Let's try this out with a workload of increments, and see what happens:
 
 ```clj
-$ lein run test -w g-counter --bin pn_counter.rb --time-limit 20 --rate 10
+$ lein run test -w g-counter --bin counter.rb --time-limit 20 --rate 10
 ...
  :workload {:valid? true,
             :errors nil,
@@ -146,11 +148,10 @@ value was within the acceptable range of outcomes: [152, 152].
 
 ## PN-Counters
 
-What happens if we allow *decrements* of the value? Let's use the `pn-counter`
-workload and see.
+What happens if we allow *decrements* of the value? Let's use the [pn-counter](/doc/workloads.md#workload-pn-counter) workload and see.
 
-```
-$ lein run test -w pn-counter --bin pn_counter.rb --time-limit 20 --rate 10
+```clj
+$ lein run test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
 ...
             :final-reads (11 11 11 11 11),
             :acceptable ([-38 -38])},
@@ -246,8 +247,8 @@ class CounterServer
     ...
 ```
 
-```
-$ lein run test -w pn-counter --bin pn_counter.rb --time-limit 20 --rate 10
+```clj
+$ lein run test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
 ...
  :workload {:valid? true,
             :errors nil,
@@ -261,8 +262,8 @@ Everything looks good! ヽ(‘ー`)ノ
 
 Now we can handle decrements as well! Is it partition-tolerant?
 
-```
-$ lein run test -w pn-counter --bin pn_counter.rb --time-limit 30 --rate 10 --nemesis partition
+```clj
+$ lein run test -w pn-counter --bin counter.rb --time-limit 30 --rate 10 --nemesis partition
 ...
  :workload {:valid? true,
             :errors nil,

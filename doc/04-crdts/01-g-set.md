@@ -1,6 +1,6 @@
 # G-Set
 
-The [g-set workload)(/doc/workloads.md#workload-g-set) is almost the same as
+The [g-set workload](/doc/workloads.md#workload-g-set) is almost the same as
 the broadcast problem: we want to keep track of a shared, constantly growing
 set of elements. Clients issue `add` requests to add an element to the set, and
 `read` requests to get all current elements. To do this, we're going to build a
@@ -153,7 +153,7 @@ Every five seconds, we'll have our node broadcast its state to all other nodes.
 Like the broadcast protocol, we could use a more complex topology here to be
 more efficient, but this is a good place to start.
 
-```
+```rb
     @node.every 5 do
       set = @lock.synchronize do
         @set.to_a
