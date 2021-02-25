@@ -1,7 +1,9 @@
 (ns maelstrom.workload.pn-counter
   "An eventually-consistent counter which supports increments and decrements.
   Validates that the final read on each node has a value which is the sum of
-  all known (or possible) increments and decrements."
+  all known (or possible) increments and decrements.
+
+  See also: g-counter, which is identical, but does not allow decrements."
   (:refer-clojure :exclude [read])
   (:require [maelstrom [client :as c]
                        [net :as net]]
@@ -117,9 +119,10 @@
                                   ; gonna give wrong answers
                                   (assert (integer? (:value r)))
                                   (not (.contains acceptable (:value r))))))]
-        {:valid?     (empty? errors)
-         :errors     (seq errors)
-         :acceptable (acceptable->vecs acceptable)}))))
+        {:valid?      (empty? errors)
+         :errors      (seq errors)
+         :final-reads (map :value reads)
+         :acceptable  (acceptable->vecs acceptable)}))))
 
 (defn workload
   "Constructs a workload for a grow-only set, given options from the CLI

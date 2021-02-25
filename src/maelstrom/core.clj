@@ -14,6 +14,7 @@
             [maelstrom.workload [broadcast :as broadcast]
                                 [echo :as echo]
                                 [g-set :as g-set]
+                                [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]
                                 [txn-list-append :as txn-list-append]]
@@ -31,6 +32,7 @@
   {:broadcast       broadcast/workload
    :echo            echo/workload
    :g-set           g-set/workload
+   :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload
    :lin-kv          lin-kv/workload
    :txn-list-append txn-list-append/workload})
