@@ -77,7 +77,8 @@
             :net     (net/jepsen-adapter net)
             :net-journal (:journal @net)
             :checker (checker/compose
-                       {:perf       (checker/perf)
+                       {:perf       (checker/perf
+                                      {:nemeses (:perf nemesis-package)})
                         :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (checker/stats)
