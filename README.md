@@ -46,6 +46,7 @@ sophisticated workloads.
 - [Chapter 1: Getting Ready](doc/01-getting-ready/index.md)
 - [Chapter 2: Echo](doc/02-echo/index.md)
 - [Chapter 3: Broadcast](doc/03-broadcast/index.md)
+- [Chapter 4: CRDTs](doc/04-crdts/index.md)
 - [Chapter 5: Raft](doc/05-raft/index.md)
 
 There are also several reference documents that may be helpful:
