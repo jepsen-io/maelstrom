@@ -224,7 +224,7 @@
                 :type type#,
                 :error :net-timeout)))
      (catch [:type :rpc-error] e#
-       (let [type# (if (or (:definite? e#) :fail
+       (let [type# (if (or (:definite? e#)
                            (~idempotent (:f ~op)))
                      :fail
                      :info)]
