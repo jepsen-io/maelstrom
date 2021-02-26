@@ -49,8 +49,11 @@
                       :code 22
                       :text (str "current value " (pr-str (m k))
                                  " is not " (pr-str (:from body)))}])
-                  [this
-                   {:type "error", :code 20, :text "key does not exist"}])))))
+                  (if (:create_if_not_exists body)
+                    [(assoc-in this [:m k] (:to body))
+                     {:type "cas_ok"}]
+                    [this
+                     {:type "error", :code 20, :text "key does not exist"}]))))))
 
 (defn persistent-kv
   "A persistent key-value store. Work just like Maelstrom's `lin-kv` workload."

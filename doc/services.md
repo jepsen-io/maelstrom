@@ -19,9 +19,12 @@ a response message. For an example, see [lin_kv_proxy.rb](/demo/ruby/lin_kv_prox
 
 ## lin-kv
 
-The `lin-kv` service offers a linearizable key-value store, which has exactly
-the same API as the [lin-kv workload](workloads.md#workload-lin-kv). It offers
+The `lin-kv` service offers a linearizable key-value store, which has the same API as the [lin-kv workload](workloads.md#workload-lin-kv). It offers
 write, read, and compare-and-set operations on individual keys.
+
+Additionally, `cas` requests may include `create_if_not_exists: true`, which
+causes `cas` to create missing keys, rather than returning a key-not-found
+error. This is particularly helpful for lazy initialization of state.
 
 ## seq-kv
 
