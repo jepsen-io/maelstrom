@@ -146,10 +146,12 @@
     :default false]
 
    [nil "--max-txn-length INT" "What's the most operations we can execute per transaction?"
+    :default  4
     :parse-fn parse-long
     :validate [pos? "must be positive"]]
 
    [nil "--max-writes-per-key INT" "How many writes can we perform to any single key, for append tests?"
+    :default  16
     :parse-fn parse-long
     :validate [pos? "must be positive"]]
 
