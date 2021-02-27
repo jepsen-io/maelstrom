@@ -47,7 +47,8 @@ sophisticated workloads.
 - [Chapter 2: Echo](doc/02-echo/index.md)
 - [Chapter 3: Broadcast](doc/03-broadcast/index.md)
 - [Chapter 4: CRDTs](doc/04-crdts/index.md)
-- [Chapter 5: Raft](doc/05-raft/index.md)
+- [Chapter 5: Datomic](doc/05-datomic/index.md)
+- [Chapter 6: Raft](doc/06-raft/index.md)
 
 There are also several reference documents that may be helpful:
 

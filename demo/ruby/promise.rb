@@ -1,5 +1,3 @@
-#!/usr/bin/env ruby
-
 require_relative "errors.rb"
 
 class Promise
