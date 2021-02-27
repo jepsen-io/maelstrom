@@ -55,8 +55,9 @@
         nemesis-package (nemesis/package {:db       db
                                           :interval (:nemesis-interval opts)
                                           :faults   (:nemesis opts)})
-        generator (->> (when (pos? rate)
-                         (gen/stagger (/ rate) (:generator workload)))
+        generator (->> (if (pos? rate)
+                         (gen/stagger (/ rate) (:generator workload))
+                         (gen/sleep (:time-limit opts)))
                        (gen/nemesis (:generator nemesis-package))
                        (gen/time-limit (:time-limit opts)))
         ; If this workload has a final generator, end the nemesis, wait for
