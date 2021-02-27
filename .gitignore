@@ -1,6 +1,7 @@
 /target
 /classes
 /checkouts
+/class
 store/
 pom.xml
 pom.xml.asc
