@@ -109,12 +109,20 @@
   (for [demo demos]
     (maelstrom-test (merge opts demo))))
 
-(def opt-spec
-  "Extra options for the CLI"
+(def test-opt-spec
+  "Options for single tests."
   [[nil "--bin FILE"        "Path to binary which runs a node"
     :missing "Expected a --bin PATH_TO_BINARY to test"]
 
-   [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
+   ["-w" "--workload NAME" "What workload to run."
+    :default "lin-kv"
+    :parse-fn keyword
+    :validate [workloads (cli/one-of workloads)]]
+   ])
+
+(def opt-spec
+  "Extra options for the CLI"
+  [[nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
     :default [:strict-serializable]
     :parse-fn (fn [s]
                 (map keyword (str/split s #"\s+,\s+")))
@@ -183,10 +191,6 @@
     :default :grid
     :validate [broadcast/topologies (cli/one-of broadcast/topologies)]]
 
-   ["-w" "--workload NAME" "What workload to run."
-    :default "lin-kv"
-    :parse-fn keyword
-    :validate [workloads (cli/one-of workloads)]]
    ])
 
 (defn parse-node-count
@@ -219,7 +223,8 @@
 (defn -main
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn   maelstrom-test
-                                         :opt-spec  opt-spec
+                                         :opt-spec  (concat test-opt-spec
+                                                            opt-spec)
                                          :opt-fn*   opt-fn})
                    (cli/serve-cmd)
                    ; This is basically a modified test-all command
