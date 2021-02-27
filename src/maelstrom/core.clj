@@ -117,7 +117,7 @@
    [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
     :default [:strict-serializable]
     :parse-fn (fn [s]
-                (map keyword (str/split #"\s+,\s+" s)))
+                (map keyword (str/split s #"\s+,\s+")))
     :validate [(partial every? cm/friendly-model-name)
                (cli/one-of (sort (map cm/friendly-model-name cm/all-models)))]]
 
