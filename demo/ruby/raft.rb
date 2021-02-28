@@ -1,220 +1,269 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
-require 'json'
 require 'set'
+require_relative 'node.rb'
 
-class Logger
-  def <<(*args)
-    STDERR.puts *args
+class Map
+  attr_reader :map
+  def initialize(map = {})
+    @map = map
+  end
+
+  # Applies an operation (e.g. {type: "write", key: 1, value: 2}) to this Map,
+  # returning a tuple of the resulting map and completed operation.
+  def apply(op)
+    k = op[:key]
+    case op[:type]
+    when 'read'
+      if @map.key? k
+        [self, {type: 'read_ok', value: @map[k]}]
+      else
+        [self, RPCError.key_does_not_exist('not found').to_json]
+      end
+
+    when 'write'
+      [Map.new(@map.merge({k => op[:value]})), {type: 'write_ok'}]
+
+    when 'cas'
+      if @map.key? k
+        if @map[k] == op[:from]
+          [Map.new(@map.merge({k => op[:to]})),
+           {type: 'cas_ok'}]
+        else
+          [self,
+           RPCError.precondition_failed(
+             "expected #{op[:from]}, but had #{@map[k]}"
+          ).to_json]
+        end
+      else
+        [self, RPCError.key_does_not_exist('not found').to_json]
+      end
+    end
   end
 end
 
+# Stores Raft entries, which are maps with a {:term} field. Not thread-safe; we
+# handle locking in the Raft class.
 class Log
-  def initialize(logger)
-    @logger = logger
+  # When we construct a fresh log, we add a default entry. This eliminates some
+  # special cases for empty logs.
+  def initialize(node)
+    @node = node
     @entries = [{term: 0, op: nil}]
   end
 
-  # Raft's log is 1-indexed
+  # Returns a log entry by index. Note that Raft's log is 1-indexed!
   def [](i)
-    @entries[i-1]
+    @entries[i - 1]
   end
 
-  def append(entries)
-    @entries += entries
-    @logger << "Log: #{@entries.inspect}"
+  # Appends multiple entries to the log.
+  def append!(entries)
+    entries.each do |e|
+      # Coerce strings keys to keywords
+      e = e.transform_keys(&:to_sym)
+      e[:op] = e[:op].transform_keys(&:to_sym)
+      e[:op][:body] = e[:op][:body].transform_keys(&:to_sym)
+      @entries << e
+    end
+    # @node.log "Log: #{@entries.inspect}"
   end
 
+  # All entries from index i to the end
+  def from_index(i)
+    if i <= 0
+      raise IndexError.new "Illegal index #{i}"
+    end
+
+    @entries.slice(i - 1 .. -1)
+  end
+
+  # The most recent entry
   def last
     @entries[-1]
   end
 
-  def last_term
-    if l = last
-      l[:term]
-    else
-      0
-    end
-  end
-
-  def size
-    @entries.size
-  end
-
-  # Truncate log to length len
-  def truncate(len)
+  # Truncate the log to this many entries
+  def truncate!(len)
     @entries.slice! len...size
   end
 
-  # Entries from index i onwards
-  def from(i)
-    raise "illegal index #{i}" unless 0 < i
-    @entries.slice(i - 1 .. -1)
+  # How many entries in the log?
+  def size
+    @entries.size
   end
 end
 
-class Client
-  attr_accessor :node_id
-
-  def initialize(logger)
-    @node_id = nil
-    @logger = logger
-    @next_msg_id = 0
-    @handlers = {}
-    @callbacks = {}
-
-    @in_buffer = ""
-  end
-
-  # Generate a fresh message id
-  def new_msg_id
-    @next_msg_id += 1
-  end
-
-  # Register a new message type handler
-  def on(type, &handler)
-    if @handlers[type]
-      raise "Already have a handler for #{type}!"
-    end
-
-    @handlers[type] = handler
-  end
-
-  # Sends a raw message
-  def send_msg!(msg)
-    @logger << "Sent #{msg.inspect}"
-    JSON.dump msg, STDOUT
-    STDOUT << "\n"
-    STDOUT.flush
-  end
-
-  # Send a body to the given node id. Fills in src with our own node_id.
-  def send!(dest, body)
-    send_msg!({dest: dest, src: @node_id, body: body})
-  end
-
-  # Reply to a request with a response body
-  def reply!(req, body)
-    body[:in_reply_to] = req[:body][:msg_id]
-    send! req[:src], body
-  end
-
-  # Send an RPC request
-  def rpc!(dest, body, &handler)
-    msg_id = new_msg_id
-    @callbacks[msg_id] = handler
-    body[:msg_id] = msg_id
-    send! dest, body
-  end
-
-  # Consumes available input from stdin, filling @in_buffer. Returns a line
-  # if ready, or nil if no line ready yet.
-  def readline_nonblock
-    begin
-      loop do
-        x = STDIN.read_nonblock 1
-        break if x == "\n"
-        @in_buffer << x
-      end
-
-      res = @in_buffer
-      @in_buffer = ""
-      res
-    rescue IO::WaitReadable
-    end
-  end
-
-  # Processes a single message from stdin, if one is available.
-  def process_msg!
-    if line = readline_nonblock
-      msg = JSON.parse line, symbolize_names: true
-      @logger << "Received #{msg.inspect}"
-
-      handler = nil
-      if handler = @callbacks[msg[:body][:in_reply_to]]
-        @callbacks.delete msg[:body][:in_reply_to]
-      elsif handler = @handlers[msg[:body][:type]]
-      else
-        raise "No callback or handler for #{msg.inspect}"
-      end
-      handler.call msg
-      true
-    end
-  end
-end
-
-class KVStore
-  def initialize(logger)
-    @logger = logger
-    @state = {}
-  end
-
-  # Apply op to state machine and generate a response message
-  def apply!(op)
-    res = nil
-    k = op[:key]
-    case op[:type]
-    when "read"
-      if @state.include? k
-        res = {type: "read_ok", value: @state[op[:key]]}
-      else
-        res = {type: "error", code: 20, text: "not found"}
-      end
-    when "write"
-      @state[k] = op[:value]
-      res = {type: "write_ok"}
-    when "cas"
-      if not @state.include? k
-        res = {type: "error", code: 20, text: "not found"}
-      elsif @state[k] != op[:from]
-        res = {type: "error",
-               code: 22,
-               text: "expected #{op[:from]}, had #{@state[k]}"}
-      else
-        @state[k] = op[:to]
-        res = {type: "cas_ok"}
-      end
-    end
-    @logger << "KV: #{@state.inspect}"
-
-    res[:in_reply_to] = op[:msg_id]
-    {dest: op[:client], body: res}
-  end
-end
-
-class RaftNode
+class Raft
+  attr_reader :node
   def initialize
-    @election_timeout = 2.0
-    @heartbeat_interval = 1.0
-    @min_replication_interval = 0.05
-    @election_deadline = Time.at 0
-    @last_replication = Time.at 0
+    # Heartbeats and timeouts
+    @election_timeout = 2            # Time before next election, in seconds
+    @heartbeat_interval = 1          # Time between heartbeats, in seconds
+    @min_replication_interval = 0.05 # Don't replicate TOO frequently
 
-    @logger = Logger.new
+    @election_deadline  = Time.now   # Next election, in epoch seconds
+    @step_down_deadline = Time.now   # When to step down automatically.
+    @last_replication   = Time.now   # When did we last replicate?
 
-    @node_id     = nil
-    @node_ids    = nil
+    # Components
+    @node = Node.new
+    @lock = Monitor.new
+    @log = Log.new @node
+    @state_machine = Map.new
 
     # Raft state
-    @current_term = 0
-    @voted_for    = nil
-    @log          = Log.new @logger
+    @state = 'follower'   # Either follower, candidate, or leader
+    @term = 0             # What's our current term?
+    @voted_for = nil      # Which node did we vote for in this term?
+    @leader = nil         # Who do we think the leader is?
 
-    @commit_index = 0
-    @last_applied = 1
+    # Leader state
+    @commit_index = 0     # The highest committed entry in the log
+    @last_applied = 1     # The last entry we applied to the state machine
+    @next_index = nil     # A map of nodes to the next index to replicate
+    @match_index = nil    # A map of (other) nodes to the highest log entry
+                          # known to be replicated on that node.
 
-    @leader = nil
+    @node.on 'read'  do |m| client_req!(m) end
+    @node.on 'write' do |m| client_req!(m) end
+    @node.on 'cas'   do |m| client_req!(m) end
 
-    @client = Client.new @logger
-    @state_machine = KVStore.new @logger
-    setup_handlers!
+    @node.on 'request_vote' do |msg|
+      body = msg[:body]
+      @lock.synchronize do
+        maybe_step_down! body[:term]
+        grant = false
 
-    @state = :nascent
+        @node.log "Last log: #{@log.last.inspect}"
+
+        if body[:term] < @term
+          @node.log "Candidate term #{body[:term]} lower than #{@term}, not granting vote."
+        elsif @voted_for
+          @node.log "Already voted for #{@voted_for}; not granting vote."
+        elsif body[:last_log_term] < @log.last[:term]
+          @node.log "Have log entries from term #{@log.last[:term]}, which is newer than remote term #{body[:last_log_term]}; not granting vote."
+        elsif body[:last_log_term] == @log.last[:term] and
+          body[:last_log_index] < @log.size
+          @node.log "Our logs are both at term #{@log.last[:term]}, but our log is #{@log.size} and theirs is only #{body[:last_log_index]} long; not granting vote."
+        else
+          @node.log "Granting vote to #{body[:candidate_id]}"
+          grant = true
+          @voted_for = body[:candidate_id]
+          reset_election_deadline!
+        end
+
+        @node.reply! msg, {
+          type: 'request_vote_res',
+          term: @term,
+          vote_granted: grant
+        }
+      end
+    end
+
+    @node.on 'append_entries' do |msg|
+      body = msg[:body]
+      @lock.synchronize do
+        maybe_step_down! body[:term]
+
+        res = {type: 'append_entries_res',
+               term: @term,
+               success: false}
+
+        if body[:term] < @term
+          # Leader is behind us
+          @node.reply! msg, res
+          break
+        end
+
+        # Leader is ahead of us; remember them and don't try to run our own
+        # election for a bit.
+        @leader = body[:leader_id]
+        reset_election_deadline!
+
+        # Check previous entry to see if it matches
+        if body[:prev_log_index] <= 0
+          raise RPCError.abort "Out of bounds previous log index #{body[:prev_log_index]}"
+        end
+        e = @log[body[:prev_log_index]]
+
+        if e.nil? or e[:term] != body[:prev_log_term]
+          # We disagree on the previous term
+          @node.reply! msg, res
+          break
+        end
+
+        # We agree on the previous log term; truncate and append
+        @log.truncate! body[:prev_log_index]
+        @log.append! body[:entries]
+
+        # Advance commit pointer
+        if @commit_index < body[:leader_commit]
+          @commit_index = [@log.size, body[:leader_commit]].min
+          advance_state_machine!
+        end
+
+        # Acknowledge
+        res[:success] = true
+        @node.reply! msg, res
+      end
+    end
+
+    # Leader election thread
+    @node.every 0.1 do
+      sleep(rand / 10)
+      @lock.synchronize do
+        if @election_deadline < Time.now
+          if @state == :leader
+            reset_election_deadline!
+          else
+            become_candidate!
+          end
+        end
+      end
+    end
+
+    # Leader stepdown thread
+    @node.every 0.1 do
+      @lock.synchronize do
+        if @state == :leader and @step_down_deadline < Time.now
+          @node.log "Stepping down: haven't received any acks recently"
+          become_follower!
+        end
+      end
+    end
+
+    # Replication thread
+    @node.every @min_replication_interval do
+      replicate_log! false
+    end
+  end
+
+  # Returns the map of match indices, including an entry for ourselves, based
+  # on our log size.
+  def match_index
+    @match_index.merge({@node.node_id => @log.size})
+  end
+
+  # Handles a client RPC request
+  def client_req!(msg)
+    @lock.synchronize do
+      if @state == :leader
+        @log.append! [{term: @term, op: msg}]
+      elsif @leader
+        # We're not the leader, but we can proxy to one.
+        @node.rpc! @leader, msg[:body] do |res|
+          @node.reply! msg, res[:body]
+        end
+      else
+        raise RPCError.temporarily_unavailable "not a leader"
+      end
+    end
   end
 
   # What number would constitute a majority of n nodes?
   def majority(n)
-    (n / 2.0 + 1).floor
+    (n / 2.0).floor + 1
   end
 
   # Given a collection of elements, finds the median, biasing towards lower
@@ -223,297 +272,226 @@ class RaftNode
     xs.sort[xs.size - majority(xs.size)]
   end
 
-  def other_nodes
-    @node_ids - [@node_id]
-  end
-
-  def next_index
-    m = @next_index.dup
-    m[@node_id] = @log.size + 1
-    m
-  end
-
-  def match_index
-    m = @match_index.dup
-    m[@node_id] = @log.size
-    m
-  end
-
-  def node_id=(id)
-    @node_id = id
-    @client.node_id = id
-  end
-
-  # Broadcast RPC
-  def brpc!(body, &handler)
-    other_nodes.each do |node_id|
-      @client.rpc! node_id, body, &handler
+  # Don't start an election for a while
+  def reset_election_deadline!
+    @lock.synchronize do
+      @election_deadline = Time.now + (@election_timeout * (rand + 1))
     end
   end
 
-  def reset_election_deadline!
-    @election_deadline = Time.now + (@election_timeout * (rand + 1))
+  # We got communication; don't step down for a while
+  def reset_step_down_deadline!
+    @lock.synchronize do
+      @step_down_deadline = Time.now + @election_timeout
+    end
   end
 
+  # If we're the leader, advance our commit index based on what other nodes
+  # match us.
+  def advance_commit_index!
+    @lock.synchronize do
+      if @state == :leader
+        n = median(match_index.values)
+        if @commit_index < n and @log[n][:term] == @term
+          @node.log "Commit index now #{n}"
+          @commit_index = n
+        end
+      end
+      advance_state_machine!
+    end
+  end
+
+  # If we have unapplied committed entries in the log, apply them to the state
+  # machine.
+  def advance_state_machine!
+    @lock.synchronize do
+      while @last_applied < @commit_index
+        # Advance the applied index and apply that op.
+        @last_applied += 1
+        req = @log[@last_applied][:op]
+        @node.log "Applying req #{req}"
+        @state_machine, res = @state_machine.apply req[:body]
+        @node.log "State machine res is #{res}"
+
+        if @state == :leader
+          # We're currently the leader: let's respond to the client.
+          @node.reply! req, res
+        end
+      end
+    end
+  end
+
+  def become_follower!
+    @lock.synchronize do
+      @state = :follower
+      @match_index = nil
+      @next_index = nil
+      @leader = nil
+      reset_election_deadline!
+      @node.log "Became follower for term #{@term}"
+    end
+  end
+
+  # Become a candidate, advance our term, and request votes.
+  def become_candidate!
+    @lock.synchronize do
+      @state = :candidate
+      advance_term!(@term + 1)
+      @voted_for = @node.node_id
+      @leader = nil
+      reset_election_deadline!
+      reset_step_down_deadline!
+      @node.log "Became candidate for term #{@term}"
+      request_votes!
+    end
+  end
+
+  # Become a leader
+  def become_leader!
+    @lock.synchronize do
+      unless @state == :candidate
+        raise "Should be a candidate!"
+      end
+
+      @state = :leader
+      @leader = nil
+      @last_replication = Time.at 0
+
+      # We'll start by trying to replicate our most recent entry
+      @next_index = {}
+      @match_index = {}
+      @node.other_node_ids.each do |node|
+        @next_index[node] = @log.size + 1
+        @match_index[node] = 0
+      end
+
+      reset_step_down_deadline!
+      @node.log "Became leader for term #{@term}"
+    end
+  end
+
+  # Advance our term to `term`, resetting who we voted for.
   def advance_term!(term)
-    raise "Can't go backwards" unless @current_term < term
-    @current_term = term
+    @lock.synchronize do
+      unless @term < term
+        raise "Term can't go backwards!"
+      end
+    end
+    @term = term
     @voted_for = nil
   end
 
+  # If remote_term is bigger than ours, advance our term and become a follower
   def maybe_step_down!(remote_term)
-    if @current_term < remote_term
-      advance_term! remote_term
-      become_follower!
+    @lock.synchronize do
+      if @term < remote_term
+        @node.log "Stepping down: remote term #{remote_term} higher than our term #{@term}"
+        advance_term! remote_term
+        become_follower!
+      end
     end
   end
 
+  # Request that other nodes vote for us as a leader.
   def request_votes!
-    votes = Set.new([@node_id])
+    @lock.synchronize do
+      # We vote for ourselves
+      votes = Set.new [@node.node_id]
+      term = @term
 
-    brpc!(
-      type:            "request_vote",
-      term:            @current_term,
-      candidate_id:    @node_id,
-      last_log_index:  @log.size,
-      last_log_term:   @log.last_term
-    ) do |response|
-      body = response[:body]
-      case body[:type]
-      when "request_vote_res"
-        maybe_step_down! body[:term]
-        if @state == :candidate and body[:vote_granted] and body[:term] == @current_term
-          # Got a vote for our candidacy
-          votes << response[:src]
-          if majority(@node_ids.size) <= votes.size
-            # We have a majority of votes for this term
-            become_leader!
+      @node.log "Last log #{@log.last}"
+
+      @node.brpc!(
+        type: 'request_vote',
+        term: term,
+        candidate_id: @node.node_id,
+        last_log_index: @log.size,
+        last_log_term: @log.last[:term]
+      ) do |res|
+        reset_step_down_deadline!
+
+        @lock.synchronize do
+          body = res[:body]
+          maybe_step_down! body[:term]
+          if @state == :candidate and
+              @term == term and
+              @term == body[:term] and
+              body[:vote_granted]
+            # We have a vote for our candidacy, and we're still in the term we
+            # requested! Record the vote
+            votes << res[:src]
+            @node.log "Have votes: #{votes}"
+
+            if majority(@node.node_ids.size) <= votes.size
+              # We have a majority of votes for this term!
+              become_leader!
+            end
           end
         end
-      else
-        raise "Unknown response message: #{response.inspect}"
       end
     end
   end
 
-  ## Transitions between roles ###############################################
-
-  def become_follower!
-    @logger << "Became follower for term #{@current_term}"
-    @state = :follower
-    @leader = nil
-    @next_index = nil
-    @match_index = nil
-  end
-
-  def become_candidate!
-    @state = :candidate
-    advance_term! @current_term + 1
-    @voted_for = @node_id
-    @leader = nil
-    @logger << "Became candidate for term #{@current_term}"
-    reset_election_deadline!
-    request_votes!
-  end
-
-  def become_leader!
-    raise "Should be a candidate" unless @state == :candidate
-    @logger << "Became leader for term #{@current_term}"
-    @state = :leader
-    @leader = nil
-    @next_index = Hash[other_nodes.zip([@log.size + 1] * other_nodes.size)]
-    @match_index = Hash[other_nodes.zip([0] * other_nodes.size)]
-  end
-
-
-  ## Rules for all servers ##################################################
-
-  def advance_state_machine!
-    if @last_applied < @commit_index
-      @last_applied += 1
-      res = @state_machine.apply! @log[@last_applied][:op]
-      if @state == :leader
-        @client.send! res[:dest], res[:body]
-      end
-      true
-    end
-  end
-
-
-  ## Rules for leaders ######################################################
-
+  # If we're the leader, replicate unacknowledged log entries to followers.
+  # Also serves as a heartbeat.
   def replicate_log!(force)
-    if @state == :leader and @min_replication_interval < (Time.now - @last_replication)
-      other_nodes.each do |node|
-        ni = @next_index[node]
-        entries = @log.from ni
-        if 0 < entries.size or @heartbeat_interval < (Time.now - @last_replication)
-          @last_replication = Time.now
+    @lock.synchronize do
+      # How long has it been since we last replicated?
+      elapsed_time = Time.now - @last_replication
+      # We'll set this to true if we replicated to anyone
+      replicated = false
+      # We need the current term to ensure we don't process responses in later
+      # terms.
+      term = @term
 
-          @logger << "replicating #{ni}+: #{entries.inspect}"
-          @client.rpc!(
-            node,
-            type:            "append_entries",
-            term:            @current_term,
-            leader_id:       @node_id,
-            prev_log_index:  ni - 1,
-            prev_log_term:   @log[ni - 1][:term],
-            entries:         entries,
-            leader_commit:   @commit_index
-          ) do |res|
-            body = res[:body]
-            maybe_step_down! body[:term]
-
-            if @state == :leader
-              if body[:success]
-                @next_index[node] =
-                  [@next_index[node], ni + entries.size].max
-                @match_index[node] =
-                  [@match_index[node], ni - 1 + entries.size].max
-              else
-                @next_index[node] -= 1
+      if @state == :leader and @min_replication_interval < elapsed_time
+        # We're a leader, and enough time elapsed
+        @node.other_node_ids.each do |node|
+          # What entries should we send this node?
+          ni = @next_index[node]
+          entries = @log.from_index ni
+          if 0 < entries.size or @heartbeat_interval < elapsed_time
+            @node.log "Replicating #{ni}+ to #{node}"
+            replicated = true
+            @node.rpc!(node, {
+              type:           'append_entries',
+              term:           @term,
+              leader_id:      @node.node_id,
+              prev_log_index: ni - 1,
+              prev_log_term:  @log[ni - 1][:term],
+              entries:        entries,
+              leader_commit:  @commit_index
+            }) do |res|
+              body = res[:body]
+              @lock.synchronize do
+                maybe_step_down! body[:term]
+                if @state == :leader and body[:term] == @term
+                  reset_step_down_deadline!
+                  if body[:success]
+                    # Excellent, these entries are now replicated!
+                    @next_index[node] = [@next_index[node],
+                                         (ni + entries.size)].max
+                    @match_index[node] = [@match_index[node],
+                                          (ni + entries.size - 1)].max
+                    @node.log "Next index: #{@next_index}"
+                    advance_commit_index!
+                  else
+                    # We didn't match; back up our next index for this node
+                    @next_index[node] -= 1
+                  end
+                end
               end
             end
           end
-          true
         end
       end
-    end
-  end
 
-  def leader_advance_commit_index!
-    if @state == :leader
-      n = median match_index.values
-      if @commit_index < n and @log[n][:term] == @current_term
-        @commit_index = n
-        true
-      end
-    end
-  end
-
-
-  ## Leader election ########################################################
-
-
-  def election!
-    if @election_deadline < Time.now
-      if (@state == :follower or @state == :candidate)
-        # Time for an election!
-        become_candidate!
-      else
-        # We're a leader or initializing, sleep again
-        reset_election_deadline!
-      end
-      true
-    end
-  end
-
-  ## Top-level message handlers #############################################
-
-  def add_log_entry!(msg)
-    body = msg[:body]
-    if @state == :leader
-      body[:client] = msg[:src]
-      @log.append [{term: @current_term, op: body}]
-    elsif @leader
-      # Proxy to current leader
-      @logger << "Proxying to #{@leader}"
-      msg[:dest] = @leader
-      @client.send_msg! msg
-    else
-      @client.reply! msg, {type: "error", code: 11, text: "not a leader"}
-    end
-  end
-
-  def setup_handlers!
-    @client.on "init" do |msg|
-      raise "Can't init twice!" unless @state == :nascent
-
-      body = msg[:body]
-      self.node_id = body[:node_id]
-      @node_ids = body[:node_ids]
-      @logger << "Raft init!"
-      @client.reply! msg, {type: "init_ok"}
-
-      reset_election_deadline!
-      become_follower!
-    end
-
-    @client.on "request_vote" do |msg|
-      body = msg[:body]
-      maybe_step_down! body[:term]
-      grant = false
-      if (body[:term] < @current_term)
-      elsif (@voted_for == nil or @voted_for == body[:candidate_id]) and
-        @log.last_term <= body[:last_log_term] and
-        @log.size <= body[:last_log_index]
-
-        grant = true
-        @voted_for = body[:candidate_id]
-        reset_election_deadline!
-      end
-
-      @client.reply! msg, {type: "request_vote_res",
-                           term: @current_term,
-                           vote_granted: grant}
-    end
-
-    @client.on "append_entries" do |msg|
-      body = msg[:body]
-      maybe_step_down! body[:term]
-      reset_election_deadline!
-
-      ok  = {type: "append_entries_res", term: @current_term, success: true}
-      err = {type: "append_entries_res", term: @current_term, success: false}
-
-      if body[:term] < @current_term
-        # Leader is behind us
-        @client.reply! msg, err
-        break
-      end
-
-      @leader = body[:leader_id]
-
-      # TODO: I think there's a bug here; we should assign e before *instead*
-      # of having it in the if.
-      if 0 < body[:prev_log_index] and e = @log[body[:prev_log_index]] and (e.nil? or e[:term] != body[:prev_log_term])
-        # We disagree on the previous log term
-        @client.reply! msg, err
-      else
-        # OK, we agree on the previous log term now. Truncate and append
-        # entries.
-        @log.truncate body[:prev_log_index]
-        @log.append body[:entries]
-
-        # Advance commit pointer
-        if @commit_index < body[:leader_commit]
-          @commit_index = [body[:leader_commit], @log.size].min
-        end
-
-        @client.reply! msg, ok
-      end
-    end
-
-    @client.on "read"  do |msg| add_log_entry! msg end
-    @client.on "write" do |msg| add_log_entry! msg end
-    @client.on "cas"   do |msg| add_log_entry! msg end
-  end
-
-  def main!
-    @logger << "Online"
-    while true
-      begin
-        @client.process_msg! or
-          replicate_log! false or
-          election! or
-          leader_advance_commit_index! or
-          advance_state_machine! or
-          sleep 0.001
-      rescue StandardError => e
-        @logger << "Caught #{e}:\n#{e.backtrace.join "\n"}"
+      if replicated
+        # We did something!
+        @last_replication = Time.now
       end
     end
   end
 end
 
-RaftNode.new.main!
+Raft.new.node.main!

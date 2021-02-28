@@ -1,8 +1,6 @@
-# Shared functions for all nodes.
-
 require 'json'
-require_relative 'promise.rb'
 require_relative 'errors.rb'
+require_relative 'promise.rb'
 
 class Node
   attr_reader :node_id, :node_ids
@@ -11,31 +9,30 @@ class Node
     @node_id = nil
     @node_ids = nil
     @next_msg_id = 0
+
     @init_handlers = []
     @handlers = {}
     @callbacks = {}
-    @every_tasks = []
+    @periodic_tasks = []
+
     @lock = Monitor.new
     @log_lock = Mutex.new
 
     # Register an initial handler for the init message
     on "init" do |msg|
       # Set our node ID and IDs
-      body = msg[:body]
-      @node_id = body[:node_id]
-      @node_ids = body[:node_ids]
+      @node_id = msg[:body][:node_id]
+      @node_ids = msg[:body][:node_ids]
 
-      # Call init handlers
       @init_handlers.each do |h|
         h.call msg
       end
 
-      # Let Maelstrom know we initialized
-      reply! msg, {type: "init_ok"}
-      log "Node initialized"
+      reply! msg, type: "init_ok"
+      log "Node #{@node_id} initialized"
 
-      # Spawn periodic task handlers
-      start_every_tasks!
+      # Launch threads for periodic tasks
+      start_periodic_tasks!
     end
   end
 
@@ -45,13 +42,6 @@ class Node
       STDERR.puts message
       STDERR.flush
     end
-  end
-
-  # Returns an array of nodes other than ourselves.
-  def other_node_ids
-    ids = @node_ids.clone
-    ids.delete @node_id
-    ids
   end
 
   # Register a new message type handler
@@ -66,6 +56,12 @@ class Node
   # A special handler for initialization
   def on_init(&handler)
     @init_handlers << handler
+  end
+
+  # Periodically evaluates block every dt seconds with the node lock
+  # held--helpful for building periodic replication tasks, timeouts, etc.
+  def every(dt, &block)
+    @periodic_tasks << {dt: dt, f: block}
   end
 
   # Send a body to the given node id. Fills in src with our own node_id.
@@ -100,8 +96,22 @@ class Node
     @lock.synchronize do
       msg_id = @next_msg_id += 1
       @callbacks[msg_id] = handler
-      body[:msg_id] = msg_id
+      body = body.merge({msg_id: msg_id})
       send! dest, body
+    end
+  end
+
+  def other_node_ids
+    @node_ids.reject do |id|
+      id == @node_id
+    end
+  end
+
+  # Sends a broadcast RPC request. Invokes block with a response message for
+  # each response that arrives.
+  def brpc!(body, &handler)
+    other_node_ids.each do |node|
+      rpc! node, body, &handler
     end
   end
 
@@ -115,20 +125,12 @@ class Node
     p.await
   end
 
-  # Periodically evaluates block every dt seconds with the node lock
-  # held--helpful for building periodic replication tasks, timeouts, etc.
-  def every(dt, &block)
-    @every_tasks << {dt: dt, f: block}
-  end
-
   # Launches threads to process periodic handlers
-  def start_every_tasks!
-    @every_tasks.each do |task|
+  def start_periodic_tasks!
+    @periodic_tasks.each do |task|
       Thread.new do
         loop do
-          @lock.synchronize do
-            task[:f].call
-          end
+          task[:f].call
           sleep task[:dt]
         end
       end
@@ -143,7 +145,7 @@ class Node
     msg
   end
 
-  # Loops, processing messages.
+  # Loops, processing messages from STDIN
   def main!
     Thread.abort_on_exception = true
 
@@ -151,24 +153,32 @@ class Node
       msg = parse_msg line
       log "Received #{msg.inspect}"
 
+      # What handler should we use for this message?
       handler = nil
       @lock.synchronize do
-        if handler = @callbacks[msg[:body][:in_reply_to]]
-          @callbacks.delete msg[:body][:in_reply_to]
+        if in_reply_to = msg[:body][:in_reply_to]
+          if handler = @callbacks[msg[:body][:in_reply_to]]
+            @callbacks.delete msg[:body][:in_reply_to]
+          else
+            log "Ignoring reply to #{in_reply_to} with no callback"
+          end
         elsif handler = @handlers[msg[:body][:type]]
         else
-          raise "No callback or handler for #{msg.inspect}"
+          raise "No handler for #{msg.inspect}"
         end
       end
 
-      Thread.new(handler, msg) do |handler, msg|
-        begin
-          handler.call msg
-        rescue RPCError => e
-          reply! msg, e.to_json
-        rescue => e
-          log "Exception handling #{msg}:\n#{e.full_message}"
-          reply! msg, RPCError.crash(e.full_message).to_json
+      if handler
+        # Actually handle message
+        Thread.new(handler, msg) do |handler, msg|
+          begin
+            handler.call msg
+          rescue RPCError => e
+            reply! msg, e.to_json
+          rescue => e
+            log "Exception handling #{msg}:\n#{e.full_message}"
+            reply! msg, RPCError.crash(e.full_message).to_json
+          end
         end
       end
     end

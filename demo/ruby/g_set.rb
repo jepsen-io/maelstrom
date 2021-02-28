@@ -18,12 +18,6 @@ class GSetNode
       element = msg[:body][:element]
       @set.add element
       @node.reply! msg, {type: "add_ok"}
-
-      # Broadcast add to other nodes
-      #@node.broadcast! {type: "replicate_one", element: element}
-
-      # Broadcast entire value to other nodes
-      # @node.broadcast! {type: "replicate_full", value: @set.to_a}
     end
 
     # Accept a single element from another node
@@ -39,7 +33,9 @@ class GSetNode
     # Periodically replicate entire state
     @node.every 5 do
       STDERR.puts "Replicating!"
-      @node.broadcast!({type: "replicate_full", value: @set.to_a})
+      @node.other_node_ids.each do |node|
+        @node.send! node, ({type: "replicate_full", value: @set.to_a})
+      end
     end
   end
 

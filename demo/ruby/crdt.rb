@@ -39,7 +39,9 @@ class CRDT
 
     # Periodically replicate entire state
     @node.every 5 do
-      @node.broadcast!({type: "merge", value: @value.to_json})
+      @node.other_node_ids.each do |node|
+        @node.send! node, {type: "merge", value: @value.to_json}
+      end
     end
   end
 end
