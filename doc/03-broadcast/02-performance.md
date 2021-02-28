@@ -360,7 +360,7 @@ And an `rpc!` method to send a new RPC request, and record the callback:
     @lock.synchronize do
       msg_id = @next_msg_id += 1
       @callbacks[msg_id] = handler
-      body[:msg_id] = msg_id
+      body = body.merge({msg_id: msg_id})
       send! dest, body
     end
   end
