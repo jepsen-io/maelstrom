@@ -59,7 +59,7 @@
   "Constructs a layout object with general information we need to position
   messages in space."
   [journal]
-  (let [width  800
+  (let [width  1200
         y-step 20
         truncated? (< journal-limit (count journal))
         step-count (min journal-limit (count journal))
@@ -154,6 +154,14 @@
         ; Are we flipping around to point left?
         left?  (not (< -90 angle 90))
 
+        desc  (str (:type body)
+                   " "
+                   (case (:type body)
+                     "error" (:text body)
+                     (-> body
+                         (dissoc :type :msg_id :in_reply_to)
+                         pr-str)))
+        desc  (truncate-string desc 48)
         label [:text {:text-anchor "middle"
                       :x (/ length 2)
                       ; Just above line
@@ -161,14 +169,7 @@
                       ; Text will be upside down, so we flip it here
                       :transform (when left?
                                    (str "rotate(180 "(/ length 2) " 0)"))}
-               (:type body)
-               " "
-               (case (:type body)
-                 "error" (:text body)
-                 (-> body
-                     (dissoc :type :msg_id :in_reply_to)
-                     pr-str
-                     (truncate-string 48)))]]
+               desc]]
     ; Recall that transforms are applied last to first, because they expand to
     ; effectively nested transforms
     [:g {:transform (str
