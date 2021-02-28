@@ -86,7 +86,11 @@
      (teardown! [_ test])
 
      (close! [_ test]
-       (c/close! conn)))))
+       (c/close! conn))
+
+     client/Reusable
+     (reusable? [this test]
+       true))))
 
 (defn workload
   "Constructs a workload for linearizable registers, given option from the CLI
