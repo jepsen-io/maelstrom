@@ -64,7 +64,7 @@ one instance of that server on a node called `n1`, that we'd like to run the
 test for ten seconds, and that we'd like to see stderr log messages in the Maelstrom logs.
 
 ```
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
 ...
 INFO [2021-02-07 16:33:15,155] jepsen node n1 - maelstrom.db Setting up n1
 INFO [2021-02-07 16:33:15,156] jepsen node n1 - maelstrom.process launching demo/echo/echo_demo.rb nil
@@ -110,7 +110,7 @@ In the main loop, we'll parse each line we receive as JSON.
 Let's give that a shot:
 
 ```
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
 ...
 INFO [2021-02-08 10:34:21,262] node n1 - maelstrom.process Received {:dest=>"n1", :body=>{:type=>"init", :node_id=>"n1", :node_ids=>["n1"], :msg_id=>1}, :src=>"c1"}
 ...
@@ -141,7 +141,7 @@ extract the node ID, and use it to initialize our own state.
 ```
 
 ```
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
 ...
 INFO [2021-02-08 10:36:24,323] node n1 - maelstrom.process Received {:dest=>"n1", :body=>{:type=>"init", :node_id=>"n1", :node_ids=>["n1"], :msg_id=>1}, :src=>"c1"}
 INFO [2021-02-08 10:36:24,325] node n1 - maelstrom.process Initialized node n1
@@ -249,7 +249,7 @@ we initialized OK.
 Let's give that a shot!
 
 ```
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
 ...
 INFO [2021-02-08 11:17:57,613] jepsen node n1 - maelstrom.db Setting up n1
 INFO [2021-02-08 11:17:57,615] jepsen node n1 - maelstrom.process launching echo.rb nil
@@ -308,7 +308,7 @@ Let's try replying with the same body we were given:
 Let's try that out:
 
 ```clj
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10 --log-stderr
 ...
 clojure.lang.ExceptionInfo: Malformed RPC response. Maelstrom sent node n1 the following request:
 
@@ -344,7 +344,7 @@ with the same body we took in! Let's fix that:
 ```
 
 ```clj
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10
 ...
 INFO [2021-02-22 13:54:50,633] jepsen test runner - jepsen.core Relative time begins now
 INFO [2021-02-22 13:54:50,647] jepsen worker 0 - jepsen.util 0	:invoke	:echo	"Please echo 58"
@@ -401,7 +401,7 @@ send to see if Maelstrom notices.
 ```
 
 ```
-$ lein run test -w echo --bin echo.rb --nodes n1 --time-limit 10
+$ ./maelstrom test -w echo --bin echo.rb --nodes n1 --time-limit 10
 ...
  :workload {:valid? false,
             :errors (["Expected a message with :echo"

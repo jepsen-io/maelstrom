@@ -86,7 +86,7 @@ $ chmod +x datomic.rb`
 Now, let's fire up Maelstrom, and see what kind of messages we get from our workload.
 
 ```clj
-lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --log-stderr --node-count 1
+./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --log-stderr --node-count 1
 ...
 INFO [2021-02-26 10:01:36,788] n3 stderr - maelstrom.process /home/aphyr/maelstrom/node.rb:120:in `block in main!': No handler for {:dest=>"n3", :body=>{:txn=>[["r", 9, nil], ["r", 8, nil]], :type=>"txn", :msg_id=>1}, :src=>"c14", :id=>14} (RuntimeError)
 ```
@@ -103,7 +103,7 @@ one. We'll just... send back exactly the same transaction we got, without doing 
 ```
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --log-stderr --node-count 1
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --log-stderr --node-count 1
 ...
 INFO [2021-02-26 10:04:41,678] n3 stderr - maelstrom.process Txn: [["append", 9, 13], ["r", 7, nil]]
 ```
@@ -244,7 +244,7 @@ end
 ```
 
 ```clj
-lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 1...
+./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 1...
 Everything looks good! ヽ(‘ー`)ノ
 ```
 
@@ -253,7 +253,7 @@ upping the number of concurrent clients, the request rate, and running for a
 tad longer:
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 30 --node-count 1 --concurrency 10n --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 30 --node-count 1 --concurrency 10n --rate 100
 ...
  :workload {:valid? false,
             :anomaly-types (:internal),
@@ -318,7 +318,7 @@ instead.
 ```
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 30 --node-count 1 --concurrency 10n --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 30 --node-count 1 --concurrency 10n --rate 100
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```
@@ -326,7 +326,7 @@ Everything looks good! ヽ(‘ー`)ノ
 Excellent. What happens when we add more nodes?
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2
 ...
             :not #{:read-atomic :read-committed},
             :also-not #{:ROLA

@@ -4,7 +4,7 @@ If you test more aggressively, you should be able to observe nonlinearizable
 behaviors in this system:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 60 --node-count 3 --concurrency 10n --rate 100 --nemesis partition --nemesis-interval 3 --test-count 5
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 60 --node-count 3 --concurrency 10n --rate 100 --nemesis partition --nemesis-interval 3 --test-count 5
 ...
 Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
 ```
@@ -24,7 +24,7 @@ will make our changes much easier to demonstrate.
 If you look at `latency-raw.svg`, or have a glance at Maelstrom's logs during a test, you'll notice that almost all of our requests fail:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 100
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 100
 ```
 
 ![A latency timeseries showing most operations failing over time](lots-of-failures.png)
@@ -158,7 +158,7 @@ but we think we know who is, we'll proxy to them instead.
 Now, almost all our requests can succeed!
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 100
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 100
 ```
 
 ![A latency plot showing mostly successful operations](proxy.png)
@@ -246,7 +246,7 @@ partitions: with luck there'll be a leader election, and we can observe multiple
 leaders incrementing their commit index.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 30 --node-count 3 --concurrency 2n --rate 1 --nemesis partition --nemesis-interval 10
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 30 --node-count 3 --concurrency 2n --rate 1 --nemesis partition --nemesis-interval 10
 ...
 $ grep -i 'commit index' store/latest/node-logs/n*.log
 store/latest/node-logs/n0.log:Commit index now 12
@@ -415,7 +415,7 @@ drop the code that executes those operations locally in the request handler:
 Let's give it a shot and see!
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --node-count 3 --concurrency 4n --rate 30 --time-limit 60 --nemesis partition --nemesis-interval 10 --test-count 10
+$ ./maelstrom test -w lin-kv --bin raft.rb --node-count 3 --concurrency 4n --rate 30 --time-limit 60 --nemesis partition --nemesis-interval 10 --test-count 10
 Everything looks good! ヽ(‘ー`)/
 ```
 

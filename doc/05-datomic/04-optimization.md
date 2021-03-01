@@ -17,7 +17,7 @@ The `lww-kv` service works exactly like `lin-kv`, but uses last-write-wins
 eventual consistency, like Cassandra. Let's see what happens.
 
 ```rb
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 1
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 1
 ...
             :anomaly-types (:G-single-realtime),
             :not #{:strict-serializable},
@@ -77,7 +77,7 @@ class Thunk
 ```
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```
@@ -165,7 +165,7 @@ Now we don't have to re-fetch data that hasn't changed since the last time we
 read it!
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
                :servers {:send-count 9458,
                          :recv-count 9458,
@@ -229,7 +229,7 @@ it's still current. If we lose, we can always pull the latest map and retry.
 Let's see what happens!
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 10
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 10
 ...
  :stats {:valid? true,
          :count 1006,
@@ -296,7 +296,7 @@ Read-only transactions aren't *super* common in our workload, but they do
 occur, and when they do, we can skip an extra round-trip.
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
                :servers {:send-count 7550,
                          :recv-count 7550,
@@ -332,7 +332,7 @@ serializability. By removing that check, we allow stale reads.
 This system is, however, still *serializable*:
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100 --consistency-models serializable
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100 --consistency-models serializable
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```

@@ -25,7 +25,7 @@ the entire request message to the log. Non-leaders will throw an error.
 If we run some requests through this, we can observe non-leaders rejecting requests, and logs on leaders filling up.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
 ...
 $ cat store/latest/node-logs/n0.log
 ...
@@ -268,7 +268,7 @@ going to crash, because we haven't told nodes how to handle these messages yet,
 but that's OK.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
 ...
 Received {:dest=>"n2", :src=>"n1", :body=>{:type=>"append_entries", :term=>1, :leader_id=>"n1", :prev_log_index=>1, :prev_log_term=>0, :entries=>[{"term"=>1, "op"=>{"key"=>0, "value"=>4, "type"=>"write", "msg_id"=>1, "client"=>"c6"}}], :leader_commit=>0, :msg_id=>4}, :id=>13}
 /home/aphyr/maelstrom/node.rb:174:in `block in main!': No handler for {:dest=>"n2", :src=>"n1", :body=>{:type=>"append_entries", :term=>1, :leader_id=>"n1", :prev_log_index=>1, :prev_log_term=>0, :entries=>[{"term"=>1, "op"=>{"key"=>0, "value"=>4, "type"=>"write", "msg_id"=>1, "client"=>"c6"}}], :leader_commit=>0, :msg_id=>4}, :id=>13} (RuntimeError)
@@ -384,7 +384,7 @@ results in the log. Logs should gradually grow over time, and look ~mostly~
 like one another.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 5
 ...
 $ grep 'append_entries_res' store/latest/node-logs/*
 ...
@@ -405,7 +405,7 @@ elections in the face of network partitions by running the test for
 longer, and adding `--nemesis partition`.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 60 --node-count 3 --concurrency 2n --rate 1 --nemesis partition
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 60 --node-count 3 --concurrency 2n --rate 1 --nemesis partition
 ...
 $ grep -i 'became leader' store/latest/node-logs/n*.log
 store/latest/node-logs/n1.log:Became leader for term 8

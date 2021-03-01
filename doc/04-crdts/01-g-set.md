@@ -121,7 +121,7 @@ We haven't done any kind of inter-node replication yet, but let's see what
 happens anyway. We'll have Maelstrom use the `g-set` workload on this binary. In particular, we're looking to make sure that reads and writes can actually execute, and that *some* values get returned:
 
 ```
-$ lein run test -w g-set --bin g_set.rb
+$ ./maelstrom test -w g-set --bin g_set.rb
 ...
 INFO [2021-02-25 10:48:13,039] jepsen worker 3 - jepsen.util 3	:invoke	:add	0
 INFO [2021-02-25 10:48:13,042] jepsen worker 3 - jepsen.util 3	:ok	:add	0
@@ -172,7 +172,7 @@ more efficient, but this is a good place to start.
 Let's see how that goes:
 
 ```clj
-$ lein run test -w g-set --bin g_set.rb --time-limit 10
+$ ./maelstrom test -w g-set --bin g_set.rb --time-limit 10
 ...
             :valid? true,
             :lost-count 0,
@@ -220,7 +220,7 @@ replication rounds, times five nodes, times four messages each.
 What happens if we ramp up the request rate?
 
 ```clj
-$ lein run test -w g-set --bin g_set.rb --time-limit 10 --rate 100
+$ ./maelstrom test -w g-set --bin g_set.rb --time-limit 10 --rate 100
 ...
  :net {:stats {:all {:send-count 2136,
                      :recv-count 2136,
@@ -252,7 +252,7 @@ What about network partitions? Can we still make progress when the network is
 partitioned? Are writes lost?
 
 ```clj
-$ lein run test -w g-set --bin g_set.rb --time-limit 30 --rate 10 --nemesis partition
+$ ./maelstrom test -w g-set --bin g_set.rb --time-limit 30 --rate 10 --nemesis partition
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```
@@ -376,7 +376,7 @@ of our defensive locking.
 We can double-check that this behaves identically to the hardcoded set:
 
 ```rb
-$ lein run test -w g-set --bin g_set.rb --time-limit 20 --rate 10
+$ ./maelstrom test -w g-set --bin g_set.rb --time-limit 20 --rate 10
 ...
             :stable-latencies {0 0,
                                0.5 2233,

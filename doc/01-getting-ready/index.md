@@ -20,16 +20,6 @@ OpenJDK Runtime Environment (build 14.0.2+12-Debian-2)
 OpenJDK 64-Bit Server VM (build 14.0.2+12-Debian-2, mixed mode, sharing)
 ```
 
-### Leiningen
-
-Leiningen is a build system for the Clojure language, and is how we'll run
-Maelstrom. To install it, see the [Lein installation docs](https://leiningen.org/#install). Once installed, you should be able to run:
-
-```
-$ lein --version
-Leiningen 2.9.4 on Java 14.0.2 OpenJDK 64-Bit Server VM
-```
-
 ### Graphviz
 
 Maelstrom uses [Graphviz](https://graphviz.org/) to generate plots of
@@ -54,6 +44,16 @@ site](http://www.gnuplot.info/download.html) or via your package manager: e.g.
 $ gnuplot --version
 gnuplot 5.4 patchlevel 1
 ```
+
+## Installation
+
+Download the latest tarball from
+[https://github.com/jepsen-io/maelstrom/releases/latest](github), and untar it
+anywhere. In that directory, run `./maelstrom <args>` to launch Maelstrom.
+
+If you'd like to run the latest development builds instead, then install
+Leinigen (the Clojure build tool), clone this repository, and use `./maelstrom
+<args>` instead of `./maelstrom <args>`.
 
 ## Run a Demo
 
@@ -101,7 +101,7 @@ Type `[Control] + [c]` to exit the server.
 Now, let's run Maelstrom, and ask it to test the server:
 
 ```
-lein run test -w echo --bin demo/ruby/echo.rb --time-limit 5
+./maelstrom test -w echo --bin demo/ruby/echo.rb --time-limit 5
 ```
 
 This starts a Maelstrom test with the `echo` [workload](/doc/workloads.md).
@@ -153,7 +153,7 @@ symlink to the most recently completed test. In that directory, you'll find:
 You can browse these files using a file explorer, at the console, or via a web server that comes built-in to Maelstrom. In the main `maelstrom` directory, run:
 
 ```sh
-lein run serve
+./maelstrom serve
 22:41:00.605 [main] INFO  jepsen.web - Web server running.
 22:41:00.608 [main] INFO  jepsen.cli - Listening on http://0.0.0.0:8080/
 ```

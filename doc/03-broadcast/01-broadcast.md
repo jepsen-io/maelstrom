@@ -239,7 +239,7 @@ Let's start our node, and see if it responds to an `init` message appropriately:
 
 ```
 $ chmod +x broadcast.rb
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 5 --log-stderr
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 5 --log-stderr
 ...
 INFO [2021-02-23 09:35:26,128] jepsen node n1 - maelstrom.db Setting up n1
 INFO [2021-02-23 09:35:26,129] jepsen node n1 - maelstrom.process launching broadcast.rb nil
@@ -297,7 +297,7 @@ it when a topology message arrives.
 Let's give that a shot.
 
 ```
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 5 --log-stderr
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 5 --log-stderr
 ...
 INFO [2021-02-23 10:08:50,936] n3 stderr - maelstrom.process My neighbors are ["n2"]
 INFO [2021-02-23 10:08:50,936] n5 stderr - maelstrom.process My neighbors are ["n2", "n4"]
@@ -368,7 +368,7 @@ And whenever we receive a `broadcast` message, we'll add that message's message
 Let's try that out! We'll dial up the request rate to see how nodes change over time:
 
 ```
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
 ...
 INFO [2021-02-23 10:30:56,288] jepsen worker 0 - jepsen.util 0	:invoke	:broadcast	0
 INFO [2021-02-23 10:30:56,290] jepsen worker 0 - jepsen.util 0	:ok	:broadcast	0
@@ -477,7 +477,7 @@ messages to tell whether to reply or not.
 Let's see what happens!
 
 ```
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
 ...
 NFO [2021-02-23 11:21:52,923] jepsen worker 2 - jepsen.util 2	:invoke	:broadcast	0
 INFO [2021-02-23 11:21:53,057] jepsen worker 3 - jepsen.util 3	:invoke	:broadcast	1
@@ -547,7 +547,7 @@ already have it.
 Let's see what happens:
 
 ```
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 5 --rate 10
 ...
  :net {:stats {:all {:send-count 450,
                      :recv-count 450,

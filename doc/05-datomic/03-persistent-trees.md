@@ -256,7 +256,7 @@ end
 Phew! That was a lot of work! But if all goes well, we should have an honest-to-gosh strict-serializable data store--with values split out into their own, immutable, lazy thunks.
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```
@@ -448,7 +448,7 @@ end
 Is the resulting server still strict-serializable? Let's check:
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 Everything looks good! ヽ(‘ー`)ノ
 ```

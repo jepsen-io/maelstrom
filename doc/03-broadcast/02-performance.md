@@ -19,7 +19,7 @@ network behavior. Let's raise the request rate and time limit to get a better
 picture.
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100
 ...
  :net {:stats {...
                :servers {:send-count 9980,
@@ -68,7 +68,7 @@ Looking at messages.svg, you might notice something: we often broadcast a messag
 
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100
 ...
                :servers {:send-count 5916,
                          :recv-count 5916,
@@ -84,7 +84,7 @@ the number of nodes to, say, a 5x5 grid, we'd expect to see more inter-node
 messages--nodes in the middle might have as many as 4 neighbors.
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25
 ...
                :servers {:send-count 56280,
                          :recv-count 56280,
@@ -107,7 +107,7 @@ could arrange our nodes in a straight line, such that each has exactly two
 neighbors. It might take fewer messages per broadcast in this kind of topology. We can ask Maelstrom for a linear topology by passing `--topology line`:
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology line
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology line
 ...
                :servers {:send-count 24120,
                          :recv-count 24120,
@@ -137,7 +137,7 @@ little network latency. `--latency 10` tells Maelstrom to wait about ten
 milliseconds before delivering each (inter-server) message.
 
 ```edn
-lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology line --latency 10
+./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology line --latency 10
 ...
             :attempt-count 959,
             :stable-count 959,
@@ -160,7 +160,7 @@ hops x 10 ms/hop to propagate completely.
 What about the grid topology we started with? Is it more efficient?
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 10
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 10
 ...
             :stable-latencies {0 0, 0.5 11, 0.95 42, 0.99 56, 1 72},
 ```
@@ -182,7 +182,7 @@ between reads on each node, it's easy for small latencies to slip through the
 cracks. Let's raise the latency to get a better picture of the distribution:
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 100
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 100
 ...
             :stable-latencies {0 0,
                                0.5 452,
@@ -202,7 +202,7 @@ with a constant 100 ms of latency. What happens if not every message is delayed
 by the same amount?
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 100 --latency-dist exponential
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology grid --latency 100 --latency-dist exponential
 ...
             :stable-latencies {0 0,
                                0.5 229,
@@ -220,7 +220,7 @@ node immediately? `--topology total` tells Maelstrom to make each node a
 neighbor of every other node.
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology total --latency 100
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology total --latency 100
 ...
             :stable-latencies {0 0, 0.5 77, 0.95 95, 0.99 96, 1 97},
 ```
@@ -246,7 +246,7 @@ prohibitive, and drive up normal network delays.
 Is there an approach that balances latency with message costs? What about forming a *spanning tree* over the nodes?
 
 ```edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology tree4 --latency 100
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --rate 100 --node-count 25 --topology tree4 --latency 100
 ...
                :servers {:send-count 24744,
                          :recv-count 24744,
@@ -278,7 +278,7 @@ all messages are lost from one node to another. Let's try introducing some
 partitions into our broadcast system.
 
 ```clj
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --nemesis partition
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --nemesis partition
 ...
             :valid? false,
             :lost-count 8,
@@ -451,7 +451,7 @@ replicate asynchronously.
 Let's try that out.
 
 ```
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --topology tree4 --nemesis partition
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --topology tree4 --nemesis partition
 ...
 INFO [2021-02-24 17:19:12,535] jepsen worker 2 - jepsen.util 2	:invoke	:broadcast	6
 INFO [2021-02-24 17:19:12,537] jepsen worker 2 - jepsen.util 2	:ok	:broadcast	6
@@ -514,7 +514,7 @@ rather than sharing them as the mainloop goes onto the next message.
 Let's see what happens:
 
 ``` edn
-$ lein run test -w broadcast --bin broadcast.rb --time-limit 20 --topology tree4 --nemesis partition
+$ ./maelstrom test -w broadcast --bin broadcast.rb --time-limit 20 --topology tree4 --nemesis partition
 ...
  :net {:stats {:all {:send-count 1277,
                      :recv-count 734,

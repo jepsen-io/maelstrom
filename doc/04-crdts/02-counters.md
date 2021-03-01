@@ -130,7 +130,7 @@ CounterServer.new.node.main!
 Let's try this out with a workload of increments, and see what happens:
 
 ```clj
-$ lein run test -w g-counter --bin counter.rb --time-limit 20 --rate 10
+$ ./maelstrom test -w g-counter --bin counter.rb --time-limit 20 --rate 10
 ...
  :workload {:valid? true,
             :errors nil,
@@ -151,7 +151,7 @@ value was within the acceptable range of outcomes: [152, 152].
 What happens if we allow *decrements* of the value? Let's use the [pn-counter](/doc/workloads.md#workload-pn-counter) workload and see.
 
 ```clj
-$ lein run test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
+$ ./maelstrom test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
 ...
             :final-reads (11 11 11 11 11),
             :acceptable ([-38 -38])},
@@ -248,7 +248,7 @@ class CounterServer
 ```
 
 ```clj
-$ lein run test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
+$ ./maelstrom test -w pn-counter --bin counter.rb --time-limit 20 --rate 10
 ...
  :workload {:valid? true,
             :errors nil,
@@ -263,7 +263,7 @@ Everything looks good! ヽ(‘ー`)ノ
 Now we can handle decrements as well! Is it partition-tolerant?
 
 ```clj
-$ lein run test -w pn-counter --bin counter.rb --time-limit 30 --rate 10 --nemesis partition
+$ ./maelstrom test -w pn-counter --bin counter.rb --time-limit 30 --rate 10 --nemesis partition
 ...
  :workload {:valid? true,
             :errors nil,

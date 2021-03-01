@@ -45,7 +45,7 @@ class Raft
 If we run this, we can see that our nodes periodically become candidates:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 10
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 10
 ...
 $ grep candidate store/latest/node-logs/n0.lo
 Became candidate
@@ -123,7 +123,7 @@ Finally, we'll want a way to become a follower again.
 Let's give that a shot:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
 ...
 $ grep candidate store/latest/node-logs/n0.log
 Became candidate
@@ -190,7 +190,7 @@ Let's log that term when we become a follower too.
 If we try this out, we can see each node becomes a candidate only once per term:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
 ...
 $ cat store/latest/node-logs/n0.log | grep term
 Became candidate for term 1
@@ -375,7 +375,7 @@ When we become a candidate, we should request votes:
 Let's give that a try!
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n
 ...
 Node n2 initialized
 Became candidate for term 1
@@ -487,7 +487,7 @@ same term, and that the candidate's log is at least as big as ours--that's
 detailed in section 5.4 of the paper.
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
 ...
 $ cat store/latest/node-logs/n2.log
 Received {:dest=>"n2", :body=>{:type=>"init", :node_id=>"n2", :node_ids=>["n0", "n1", "n2"], :msg_id=>1}, :src=>"c1", :id=>0}
@@ -523,7 +523,7 @@ with a shorter interval, but also add a random `sleep` in the election process.
 If we run this, we can observe nodes granting votes to one another:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
 ...
 INFO [2021-02-27 01:23:26,549] n1 stderr - maelstrom.process Became candidate for term 1
 INFO [2021-02-27 01:23:26,550] n1 stderr - maelstrom.process Received {:dest=>"n1", :src=>"n0", :body=>{:type=>"request_vote_res", :term=>1, :vote_granted=>true, :in_reply_to=>1}, :id=>8}
@@ -601,7 +601,7 @@ And we'll need a `become_leader` transition:
 Let's give that a shot, and see who becomes a leader!
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
 ...
 $ grep Became store/latest/node-logs/*
 store/latest/node-logs/n0.log:Became follower for term 1
@@ -728,7 +728,7 @@ Now we can observe leaders politely stepping down a few seconds after their
 election:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 3 --concurrency 2n --rate 0 --log-stderr
 ...
 INFO [2021-02-27 01:44:29,758] n0 stderr - maelstrom.process Became leader for term 2
 INFO [2021-02-27 01:44:31,758] n0 stderr - maelstrom.process Stepping down: haven't received any acks recently

@@ -127,7 +127,7 @@ Raft.new.node.main!
 As usual, we've built the single-node version of the server first, without caring about replication. Let's see if that works:
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --rate 10 --node-count 1 --concurrency 2n
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --rate 10 --node-count 1 --concurrency 2n
 ...
 2021-02-26 23:39:01,300{GMT}	INFO	[jepsen worker 1] jepsen.util: 1	:invoke	:write	[0 2]
 2021-02-26 23:39:01,303{GMT}	INFO	[jepsen worker 1] jepsen.util: 1	:ok	:write	[0 2]
@@ -172,7 +172,7 @@ Of COURSE this works with a single server. But what about multiple nodes? That
 should fail to be linearizable, right?
 
 ```clj
-$ lein run test -w lin-kv --bin raft.rb --time-limit 10 --node-count 2 --rate 10 --concurrency 2n
+$ ./maelstrom test -w lin-kv --bin raft.rb --time-limit 10 --node-count 2 --rate 10 --concurrency 2n
 ...
 Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
 ```

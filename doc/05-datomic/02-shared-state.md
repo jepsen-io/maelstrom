@@ -167,7 +167,7 @@ compare-and-set! That'd give us atomic list append!
 Let's give that a shot:
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2
 ...
 2021-02-26 11:42:48,806{GMT}	INFO	[jepsen worker 1] jepsen.util: 1	:invoke	:txn	[[:r 1 nil] [:append 9 11]]
 2021-02-26 11:42:48,813{GMT}	INFO	[jepsen worker 1] jepsen.util: 1	:ok	:txn	[[:r 1 nil] [:append 9 11]]
@@ -190,7 +190,7 @@ histories are:
 Ah, so... we never actually executed two transactions at the same time. Let's turn up the request rate and see what happens:
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 
             :anomaly-types (:G-single :G1b :internal),
             ...
@@ -351,7 +351,7 @@ end
 Let's give that a try:
 
 ```clj
-lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 Everything looks good! ヽ(‘ー`)ノ
 
@@ -456,7 +456,7 @@ message handler logic with one that sends back replies.
 Now, any exception in a message handler returns a nice `crash` message (and a stacktrace!) to Maelstrom--and shows up in the history!
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 INFO [2021-02-26 13:13:46,251] jepsen worker 1 - jepsen.util 145	:info	:txn	[[:append 82 11] [:r 82 nil] [:append 79 16]]	[:crash "/home/aphyr/maelstrom/datomic.rb:87:in `transact!': CAS failed! (RuntimeError)\n\tfrom /home/aphyr/maelstrom/datomic.rb:106:in `block (2 levels) in initialize'\n\tfrom /home/aphyr/maelstrom/datomic.rb:105:in `synchronize'\n\tfrom /home/aphyr/maelstrom/datomic.rb:105:in `block in initialize'\n\tfrom /home/aphyr/maelstrom/node.rb:165:in `block in main!'\n"]
 ```
@@ -473,7 +473,7 @@ error. In `State#transact!`, we'll say:
 Begone, stacktraces!
 
 ```clj
-$ lein run test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
+$ ./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 2 --rate 100
 ...
 INFO [2021-02-26 13:18:17,751] jepsen worker 0 - jepsen.util 0	:fail	:txn	[[:append 79 3] [:append 79 4] [:r 78 nil]]	[:txn-conflict "CAS failed!"]
 ```
