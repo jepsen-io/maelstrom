@@ -15,7 +15,8 @@
                       ProcessBuilder$Redirect)
            (java.io File
                     IOException
-                    OutputStreamWriter)
+                    OutputStreamWriter
+                    Writer)
            (java.util.concurrent TimeUnit)))
 
 (def debug-buffer-size
@@ -113,12 +114,12 @@
 
 (defn stderr-thread
   "Spawns a future which handles stderr from a process."
-  [^Process p running? node-id debug-buffer log-writer log-stderr?]
+  [^Process p running? node-id debug-buffer ^Writer log-writer log-stderr?]
   (io-thread running? node-id "stderr"
              [log log-writer]
              [lines (bs/to-line-seq (.getErrorStream p))]
              (when (seq lines)
-               (let [line (first lines)]
+               (let [^String line (first lines)]
                  ; Console log
                  (when log-stderr? (info line))
 
@@ -191,7 +192,7 @@
         _       (io/make-parents (:log-file opts))
         log     (io/writer (:log-file opts))
         bin     (.getCanonicalPath (io/file (:bin opts)))
-        process (-> (ProcessBuilder. (cons bin (:args opts)))
+        process (-> (ProcessBuilder. ^java.util.List (cons bin (:args opts)))
                     (.directory (io/file (:dir opts)))
                     (.redirectOutput ProcessBuilder$Redirect/PIPE)
                     (.redirectInput  ProcessBuilder$Redirect/PIPE)
@@ -215,8 +216,8 @@
 
 (defn stop-node!
   "Kills a node. Throws if the node already exited."
-  [{:keys [^Process process running? node-id net log-file log stdin-thread
-           stderr-thread stdout-thread stderr-debug-buffer
+  [{:keys [^Process process running? node-id net log-file ^Writer log
+           stdin-thread stderr-thread stdout-thread stderr-debug-buffer
            stdout-debug-buffer]}]
   (let [crashed? (not (.isAlive process))]
     (when-not crashed?

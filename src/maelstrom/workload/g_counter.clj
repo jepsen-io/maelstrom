@@ -4,6 +4,7 @@
   all known (or possible) increments.
 
   See also: pn-counter, which is identical, but allows decrements."
+  (:refer-clojure :exclude [read])
   (:require [jepsen.generator :as gen]
             [schema.core :as s]
             [maelstrom [client :as c]]

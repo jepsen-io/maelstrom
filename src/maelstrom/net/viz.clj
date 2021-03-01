@@ -128,7 +128,7 @@
 
 (defn truncate-string
   "Cuts a string to a maximum of n characters."
-  [string n]
+  [^String string n]
   (if (<= (.length string) n)
     string
     (str (subs string 0 (- n 1)) "…")))
