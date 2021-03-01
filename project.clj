@@ -1,4 +1,4 @@
-(defproject maelstrom "0.1.1"
+(defproject maelstrom "0.2.0-SNAPSHOT"
   :description "A test bench for writing toy Raft implementations"
   :url "https://github.com/jepsen-io/maelstrom"
   :license {:name "Eclipse Public License"
@@ -10,8 +10,8 @@
                  [cheshire "5.7.0"]
                  [byte-streams "0.2.2"]
                  ; Reductions over journals
-                 [tesser.core "1.0.3"]
-                 [tesser.math "1.0.3"]
+                 [tesser.core "1.0.4"]
+                 [tesser.math "1.0.4"]
                  ; For range sets
                  [com.google.guava/guava "30.1-jre"]
                  ; Input validation
