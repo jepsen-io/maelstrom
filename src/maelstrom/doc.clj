@@ -4,6 +4,7 @@
   (:require [clojure [pprint :refer [pprint]]
                      [string :as str]]
             [clojure.java.io :as io]
+            [clojure.tools.logging :refer [info warn]]
             [maelstrom [client :as c]]))
 
 (def workloads-filename
@@ -65,6 +66,9 @@
 (defn print-error-registry
   "Prints out the error registry, as Markdown, for documentation purposes."
   []
+  (assert (seq @c/error-registry)
+          "Error registry empty, maybe macroexpansion cached? Try `lein clean`?")
+
   (println "| Code | Name | Definite | Description |")
   (println "| ---: | :--- | :------: | :---------- |")
 
