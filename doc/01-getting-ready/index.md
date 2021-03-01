@@ -48,7 +48,7 @@ gnuplot 5.4 patchlevel 1
 ## Installation
 
 Download the latest tarball from
-[https://github.com/jepsen-io/maelstrom/releases/latest](github), and untar it
+[GitHub](https://github.com/jepsen-io/maelstrom/releases/latest), and untar it
 anywhere. In that directory, run `./maelstrom <args>` to launch Maelstrom.
 
 If you'd like to run the latest development builds instead, then install
