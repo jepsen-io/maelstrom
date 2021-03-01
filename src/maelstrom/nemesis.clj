@@ -11,7 +11,6 @@
   "A full nemesis package. Options are those for
   jepsen.nemesis.combined/nemesis-package."
   [opts]
-  (info :nemesis-opts (pprint-str opts))
   (nc/compose-packages
     [(nc/partition-package opts)
      (nc/db-package opts)]))
