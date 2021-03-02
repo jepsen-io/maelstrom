@@ -4,6 +4,20 @@ Maelstrom is a workbench for learning distributed systems by writing your own,
 tiny implementations of distributed algorithms. It's used as a part of a
 distributed systems workshop by [Jepsen](https://jepsen.io/training).
 
+Maelstrom's tooling lets users experiment with [simulated
+latency](/doc/03-broadcast/02-performance.md) and [message
+loss](/doc/04-crdts/01-g-set.md#a-simple-g-set). Every test includes [timeline
+visualizations of concurrency structure](/doc/05-datomic/not-concurrent.png),
+[statistics on message
+cost](/doc/03-broadcast/02-performance.md#how-many-messages), [timeseries
+graphs](/doc/06-raft/final.png) to understand how latency, availability, and
+throughput respond to changing conditions, and [Lamport
+diagrams](/doc/05-datomic/missing-value.png) so you can understand exactly how
+messages flow through your system. Maelstrom's checkers can verify
+[sophisticated safety properties](https://github.com/jepsen-io/elle) up to
+strict serializability, and generate [intuitive, minimal
+examples](/doc/05-datomic/g1-realtime.svg) of consistency anomalies.
+
 ## Overview
 
 Maelstrom is a [Clojure](https://clojure.org/) program which runs on the [Java
@@ -21,7 +35,7 @@ cluster of virtual machines connected by a real IP network is tricky for many
 users. Maelstrom strips these problems away so you can focus on the algorithmic
 essentials: process state, transitions, and messages.
 
-The "nodes" in a Maelstrom test are simply programs, written in any language.
+The "nodes" in a Maelstrom test are plain old binaries written in any language.
 Nodes read "network" messages as JSON from STDIN, write JSON "network" messages
 to STDOUT, and do their logging to STDERR. Maelstrom runs those nodes as
 processes on your local machine, and connects them via a simulated network.
