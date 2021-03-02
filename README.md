@@ -39,7 +39,7 @@ dropping, delaying, duplicating, and reordering network messages.
 ## Documentation
 
 The Maelstrom Guide will take you through writing several different types of
-distributed algorithms using Maelstrom. We begins by setting up Maelstrom and
+distributed algorithms using Maelstrom. We begin by setting up Maelstrom and
 its dependencies, write our own tiny echo server, and move on to more
 sophisticated workloads.
 
