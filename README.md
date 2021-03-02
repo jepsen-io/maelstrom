@@ -4,12 +4,14 @@ Maelstrom is a workbench for learning distributed systems by writing your own
 implementations of distributed algorithms. It's used as a part of a
 distributed systems workshop by [Jepsen](https://jepsen.io/training).
 
-Maelstrom provides a [family of test suites](/doc/workloads.md) for things like
-"a transactional key-value store", or "an eventually-consistent counter", on
-top of a [simple JSON protocol](/doc/protocol.md), sent via STDIN and STDOUT.
-Users write servers which speak that protocol [in any language](/demo). You
-wanna write Plumtree in Bash? Byzantine Paxos in Intercal? Maelstrom is for
-you.
+Maelstrom provides a [range of tests](/doc/workloads.md) for different kinds of
+distributed systems, built on top of a [simple JSON
+protocol](/doc/protocol.md), sent via STDIN and STDOUT. Users write servers
+which speak that protocol [in any language](/demo), and Maelstrom runs those
+servers and checks that they do the right thing. You wanna write Plumtree in
+Bash? Byzantine Paxos in Intercal? Maelstrom is for you. Maelstrom also offers
+[simulated services](/doc/services.md) that you can use as primitives in more
+complex systems.
 
 Maelstrom's tooling lets users experiment with [simulated
 latency](/doc/03-broadcast/02-performance.md) and [message
