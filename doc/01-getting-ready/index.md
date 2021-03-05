@@ -52,7 +52,7 @@ Download the latest tarball from
 anywhere. In that directory, run `./maelstrom <args>` to launch Maelstrom.
 
 If you'd like to run the latest development builds instead, then install
-Leinigen (the Clojure build tool), clone this repository, and use `./maelstrom
+Leinigen (the Clojure build tool), clone this repository, and use `lein run
 <args>` instead of `./maelstrom <args>`.
 
 ## Run a Demo
