@@ -274,7 +274,7 @@ messages.
 
 ## Echo? Echo!
 
-The [Echo Workload](doc/workloads.md#workload-echo) defines a single kind of
+The [Echo Workload](../workloads.md#workload-echo) defines a single kind of
 RPC request: clients send `type: echo` messages with an `echo: <some-string>`
 field, and expect `type: echo_ok` responses with that same `echo:
 <some-string>` back.
