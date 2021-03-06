@@ -428,3 +428,11 @@ and informs us at the end of the test. Each of Maelstrom's
 [workloads](/doc/workloads.md) uses different kinds of operations, and checks
 different kinds of properties on them. We'll see additional workloads in later
 chapters.
+
+### Clojure implementations
+
+If you want to run the `clojure` implementation of the echo server, first install [babashka](https://github.com/babashka/babashka) and then run
+
+```
+$ ./maelstrom test -w echo --bin demo/clojure/echo.clj --time-limit 10
+```
