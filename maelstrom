@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# A small wrapper script for invoking the Maelstrom jar, with arguments.
+
+java -jar target/maelstrom-0.2.1-SNAPSHOT-standalone.jar "$@"
