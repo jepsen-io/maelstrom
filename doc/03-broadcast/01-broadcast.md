@@ -597,7 +597,7 @@ this broadcast model, and explore alternatives.
 
 ### Clojure implementations
 
-If you want to run the `clojure` implementation of the echo server, first install [babashka](https://github.com/babashka/babashka) and then run
+If you want to run the `clojure` implementation of the gossip server, first install [babashka](https://github.com/babashka/babashka) and then run
 
 ```
 $ ./maelstrom test -w broadcast --bin demo/clojure/gossip.clj --time-limit 10  --nemesis partition --log-stderr
