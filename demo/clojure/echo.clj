@@ -1,23 +1,14 @@
-;;#!/usr/bin/env bb
+#!/usr/bin/env bb
 
 (ns maelstrom.echo
   (:gen-class)
   (:require
-    [cheshire.core :as json]
-    [clojure.java.io :as io]))
+    [cheshire.core :as json]))
 
 
 ;;;;;;;;;;;;;;;;;;; Util functions ;;;;;;;;;;;;;;;;;;;
 
 ;;;;;; Input pre-processing functions ;;;;;;
-
-(defn- read-file
-  "Read a file into a vector of strings.
-  This is used for local testing in repl"
-  [f]
-  (with-open [rdr (io/reader (io/input-stream f))]
-    (reduce conj [] (line-seq rdr))))
-
 
 (defn- process-stdin
   "Read lines from the stdin and calls the handler"
@@ -64,12 +55,13 @@
 
 
 (def node-id (atom ""))
+(def next-message-id (atom 0))
 
 
 (defn- process-request
   [input]
   (let [body (:body input)
-        r-body {:msg_id (rand-int 100)
+        r-body {:msg_id (swap! next-message-id inc)
                 :in_reply_to (:msg_id body)}]
     (case (:type body)
       "init"
@@ -96,11 +88,3 @@
 
 
 (-main)
-
-
-#_(doseq [s (read-file "operations.json")]
-    (-> s
-        parse-json
-        process-request
-        generate-json
-        printout))

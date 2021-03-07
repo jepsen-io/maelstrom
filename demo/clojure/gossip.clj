@@ -3,20 +3,12 @@
 (ns maelstrom.gossip
   (:gen-class)
   (:require
-    [cheshire.core :as json]
-    [clojure.java.io :as io]))
+    [cheshire.core :as json]))
 
 
 ;;;;;;;;;;;;;;;;;;; Util functions ;;;;;;;;;;;;;;;;;;;
 
 ;;;;;; Input pre-processing functions ;;;;;;
-
-(defn- read-file
-  "Read a file into a vector of strings.
-  This is used for local testing in repl"
-  [f]
-  (with-open [rdr (io/reader (io/input-stream f))]
-    (reduce conj [] (line-seq rdr))))
 
 
 (defn- process-stdin
@@ -44,7 +36,7 @@
     (json/generate-string input)))
 
 
-(let [l ""]
+(let [l (Object.)]
   (defn- printerr
     "Print the received input to stderr"
     [input]
@@ -53,7 +45,7 @@
         (println input)))))
 
 
-(let [l ""]
+(let [l (Object.)]
   (defn- printout
     "Print the received input to stdout"
     [input]
