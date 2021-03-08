@@ -75,10 +75,10 @@
            {:name    (str (name workload-name))
             :nodes   nodes
             :ssh     {:dummy? true}
+            :os      (net/jepsen-os net)
+            :net     (net/jepsen-net net)
             :db      db
             :nemesis (:nemesis nemesis-package)
-            :net     (net/jepsen-adapter net)
-            :net-journal (:journal @net)
             :checker (checker/compose
                        {:perf       (checker/perf
                                       {:nemeses (:perf nemesis-package)})

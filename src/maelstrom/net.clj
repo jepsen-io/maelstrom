@@ -2,7 +2,9 @@
   "A simulated, mutable unordered network, supporting randomized delivery,
   selective packet loss, and long-lasting partitions."
   (:require [clojure.tools.logging :refer [info warn]]
-            [jepsen.net :as net]
+            [jepsen [core :as jepsen]
+                    [net :as net]
+                    [os :as os]]
             [maelstrom [util :as u]]
             [maelstrom.net.journal :as j]
             [slingshot.slingshot :refer [try+ throw+]]
@@ -86,7 +88,10 @@
                       for messages"
   [latency log-send? log-recv?]
   (atom {:queues          {}
-         :journal         (j/journal)
+         ; This will be filled in by the OS adapter--we need this to manage the
+         ; disk file open/close lifecycle, and because we'll need a test map
+         ; with a start time.
+         :journal         nil
          :log-send?       log-send?
          :log-recv?       log-recv?
          :latency-dist    (latency-dist latency)
@@ -95,7 +100,7 @@
          :next-client-id  -1
          :next-message-id (atom -1)}))
 
-(defn jepsen-adapter
+(defn jepsen-net
   "A jepsen.net/Net which controls this network."
   [net]
   (reify net/Net
@@ -113,6 +118,21 @@
 
     (flaky! [_ test]
       (swap! net assoc :p-loss 0.5))))
+
+(defn jepsen-os
+  "A jepsen.os/OS used to start and stop the network."
+  [net]
+  (reify os/OS
+    (setup! [this test node]
+      (when (= node (jepsen/primary test))
+        (info "Starting Maelstrom network")
+        (swap! net assoc :journal (j/journal test))))
+
+    (teardown! [this test node]
+      (when (= node (jepsen/primary test))
+        (when-let [j (:journal @net)]
+          (info "Shutting down Maelstrom network")
+          (j/close! j))))))
 
 (defn add-node!
   "Adds a node to the network."
