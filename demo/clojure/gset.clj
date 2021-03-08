@@ -55,9 +55,46 @@
         (println input)))))
 
 
+(defprotocol CRDT
+  "A protocol which defines behavior of a
+  CRDT type"
+
+  (combine [this other])
+
+  (add [this element])
+
+  (serialize [this])
+
+  (to-val [this]))
+
+
+(defrecord GSet
+  [data]
+
+  CRDT
+
+  (combine
+    [this other]
+    (assoc this :data (set/union data other)))
+
+
+  (add
+    [this element]
+    (assoc this :data (conj data element)))
+
+
+  (serialize
+    [this]
+    (vec data))
+
+  (to-val
+    [this]
+    data))
+
+
 (def node-id (atom ""))
 (def node-nbrs (atom []))
-(def gset (atom #{}))
+(def gset (atom nil))
 (def next-message-id (atom 0))
 
 
@@ -83,7 +120,7 @@
     (try
       (loop []
         (doseq [n @node-nbrs]
-          (send! (reply @node-id n {:value @gset
+          (send! (reply @node-id n {:value (serialize @gset)
                                     :type "replicate"})))
         (Thread/sleep 5000)
         (recur))
@@ -109,7 +146,7 @@
 
       "add"
       (do
-        (swap! gset conj (:element body))
+        (swap! gset add (:element body))
         (when (:msg_id body)
           (reply @node-id
                  (:src input)
@@ -118,7 +155,7 @@
 
       "replicate"
       (do
-        (swap! gset set/union (set (:value body)))
+        (swap! gset combine (set (:value body)))
         nil)
 
       "read"
@@ -126,13 +163,14 @@
              (:src input)
              (assoc r-body
                     :type "read_ok"
-                    :value @gset)))))
+                    :value (to-val @gset))))))
 
 
 (defn -main
   "Read transactions from stdin and send output to stdout"
   []
   (replicate-loop)
+  (reset! gset (->GSet #{}))
   (process-stdin (comp printout
                        generate-json
                        process-request
