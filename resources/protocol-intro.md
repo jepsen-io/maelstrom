@@ -49,7 +49,7 @@ node can use a monotonically increasing integer as their source of message IDs.
 
 Each message has additional keys, depending on what kind of message it is. For
 example, here is a read request from the `lin_kv` workload, which asks for the
-current value of key `5`:
+current value of key `3`:
 
 ```json
 {
