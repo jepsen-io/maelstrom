@@ -4,6 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :main maelstrom.core
+  :jvm-opts ["-Djava.awt.headless=true"]
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [jepsen "0.2.4-SNAPSHOT"]
                  [amalloy/ring-buffer "1.3.1"]

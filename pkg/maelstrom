@@ -2,4 +2,4 @@
 
 # A small wrapper script for invoking the Maelstrom jar, with arguments.
 
-exec java -jar lib/maelstrom.jar "$@"
+exec java -Djava.awt.headless=true -jar lib/maelstrom.jar "$@"
