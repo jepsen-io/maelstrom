@@ -36,12 +36,14 @@
                     [math :as tm]
                     [utils :as tu]])
   (:import (java.io EOFException)
+           (java.util BitSet)
            (java.util.concurrent ArrayBlockingQueue
                                  BlockingQueue
                                  LinkedBlockingQueue)
            (java.util.concurrent.locks LockSupport)
            (org.fressian FressianWriter FressianReader)
-           (org.fressian.handlers WriteHandler ReadHandler)))
+           (org.fressian.handlers WriteHandler ReadHandler)
+           (io.lacuna.bifurcan Set LinearSet ISet)))
 
 ; We're going to doing a LOT of event manipulation, so speed matters.
 (defrecord Event [type ^long time message])
@@ -236,13 +238,48 @@
 
 ;; Analysis
 
+(defn bitset
+  "Constructs a new BitSet"
+  []
+  (BitSet.))
+
+(t/deftransform dense-int-cardinality
+  "A cardinality fold which assumes values are densely packed integers, and
+  uses a bitset to store them."
+  []
+  (assert (nil? downstream))
+  {:reducer-identity    bitset
+   :reducer             (fn reducer [^BitSet s i] (doto s (.set i)))
+   :post-reducer        identity
+   :combiner-identity   bitset
+   :combiner            (fn combiner [^BitSet a, ^BitSet b] (doto a (.or b)))
+   :post-combiner       (fn post-combiner [^BitSet s] (.cardinality s))})
+
+(defn linear-set
+  "Constructs a new mutable Bifurcan set"
+  []
+  (LinearSet.))
+
+(t/deftransform fast-cardinality
+  "A faster cardinality fold which uses a Bifurcan set"
+  []
+  (assert (nil? downstream))
+  {:reducer-identity  linear-set
+   :reducer           (fn reducer [^LinearSet s x] (.add s x))
+   :post-reducer      identity
+   :combiner-identity linear-set
+   :combiner          (fn combiner [^LinearSet a ^LinearSet b]
+                        (.union a b))
+   :post-combiner     (fn post-combiner [^LinearSet s]
+                        (.size s))})
+
 (def sends
   "Fold which filters a journal to just sends."
-  (t/filter (comp #{:send} :type)))
+  (t/filter (fn send? [event] (= :send (:type event)))))
 
 (def recvs
   "Fold which filters a journal to just receives."
-  (t/filter (comp #{:recv} :type)))
+  (t/filter (fn recv? [event] (= :recv (:type event)))))
 
 (def clients
   "Fold which filters a journal to just messages to/from clients"
@@ -259,8 +296,7 @@
        (t/fuse {:send-count (t/count sends)
                 :recv-count (t/count recvs)
                 :msg-count  (->> (t/map (comp :id :message))
-                                 (t/set)
-                                 (t/post-combine count))})))
+                                 (dense-int-cardinality))})))
 
 (def stats
   (t/fuse {:all     (->> (t/map identity) basic-stats)
