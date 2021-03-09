@@ -46,6 +46,21 @@
 ; We're going to doing a LOT of event manipulation, so speed matters.
 (defrecord Event [type ^long time message])
 
+(defn write-body!
+  "We burn a huge amount of time in interning keywords during body
+  deserialization. To avoid this, we define a custom Fressian writer which
+  caches all keys in bodies, as well as message :types, which we know recur
+  constantly."
+  [^FressianWriter w m]
+  (.writeTag w "map" 1)
+  (.beginClosedList w)
+  (reduce-kv (fn [^FressianWriter w k v]
+               (.writeObject w k true)
+               (.writeObject w v (= k :type)))
+             w
+             m)
+  (.endList w))
+
 (def write-handlers
   "How should Fressian write different classes?"
   (-> {maelstrom.net.journal.Event
@@ -63,7 +78,7 @@
                  (.writeInt     w (:id m))
                  (.writeString  w (:src m))
                  (.writeString  w (:dest m))
-                 (.writeObject  w (:body m))
+                 (write-body!   w (:body m))
                  ; (.writeObject w nil))
                  ))}}
 
@@ -259,7 +274,7 @@
     (check [this test history opts]
       (let [journal (with-open [r (disk-reader test)]
                       (vec (reader-seq r)))
-            ;_ (info :journal (with-out-str (pprint journal)))
+            ;_ (info :journal (with-out-str (pprint (take 10 journal))))
             stats   (t/tesser (tu/chunk-vec 65536 journal) stats)
             ; Add msgs-per-op stats, so we can tell roughly how many messages
             ; exchanged per logical operation
