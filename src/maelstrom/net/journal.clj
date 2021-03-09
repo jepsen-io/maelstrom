@@ -43,7 +43,10 @@
            (java.util.concurrent.locks LockSupport)
            (org.fressian FressianWriter FressianReader)
            (org.fressian.handlers WriteHandler ReadHandler)
-           (io.lacuna.bifurcan Set LinearSet ISet)))
+           (io.lacuna.bifurcan ISet
+                               LinearSet
+                               Maps
+                               Set)))
 
 ; We're going to doing a LOT of event manipulation, so speed matters.
 (defrecord Event [type ^long time message])
@@ -232,9 +235,11 @@
   algorithm itself."
   [journal]
   (->> journal
-       (remove (fn [event]
-                 (contains? #{"init" "init_ok"}
-                            (:type (:body (:message event))))))))
+       (remove (fn [^Event event]
+                 (let [t (:type (.body ^maelstrom.net.message.Message
+                                       (.message event)))]
+                   (or (= "init" t)
+                       (= "init_ok" t)))))))
 
 ;; Analysis
 
@@ -255,11 +260,22 @@
    :combiner            (fn combiner [^BitSet a, ^BitSet b] (doto a (.or b)))
    :post-combiner       (fn post-combiner [^BitSet s] (.cardinality s))})
 
+#_
 (defn linear-set
   "Constructs a new mutable Bifurcan set"
   []
-  (LinearSet.))
+  (LinearSet.
+    ; For dense sets like our message IDs, Clojure's hash function gives better
+    ; (like, multiple orders of mag faster) dispersion than the Bifurcan
+    ; default hash.
+    (reify
+      java.util.function.ToLongFunction
+      (applyAsLong [_ x] (hash x))
+      java.util.function.ToIntFunction
+      (applyAsInt [_ x] (hash x)))
+    Maps/DEFAULT_EQUALS))
 
+#_
 (t/deftransform fast-cardinality
   "A faster cardinality fold which uses a Bifurcan set"
   []
@@ -275,11 +291,11 @@
 
 (def sends
   "Fold which filters a journal to just sends."
-  (t/filter (fn send? [event] (= :send (:type event)))))
+  (t/filter (fn send? [^Event e] (identical? :send (.type e)))))
 
 (def recvs
   "Fold which filters a journal to just receives."
-  (t/filter (fn recv? [event] (= :recv (:type event)))))
+  (t/filter (fn recv? [^Event e] (identical? :recv (.type e)))))
 
 (def clients
   "Fold which filters a journal to just messages to/from clients"
@@ -296,6 +312,7 @@
        (t/fuse {:send-count (t/count sends)
                 :recv-count (t/count recvs)
                 :msg-count  (->> (t/map (comp :id :message))
+                                 ; (fast-cardinality))})))
                                  (dense-int-cardinality))})))
 
 (def stats
