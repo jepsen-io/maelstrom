@@ -310,6 +310,10 @@
     (check [this test history opts]
       (let [journal (with-open [r (disk-reader test)]
                       (vec (reader-seq r)))
+            ; Fire off the plotter immediately; it can run without us
+            plot (future
+                   (viz/plot-analemma! (without-init journal)
+                                       (store/path! test "messages.svg")))
             ;_ (info :journal (with-out-str (pprint (take 10 journal))))
             stats   (t/tesser (tu/chunk-vec 65536 journal) stats)
             ; Add msgs-per-op stats, so we can tell roughly how many messages
@@ -328,8 +332,6 @@
                                   (float (/ (:msg-count (:servers stats))
                                             op-count)))))]
 
-        ; Generate a plot
-        (viz/plot-analemma! (without-init journal)
-                            (store/path! test "messages.svg"))
-        {:stats  stats
-         :valid? true}))))
+        ; Block on plot
+        @plot
+        (assoc stats :valid? true)))))

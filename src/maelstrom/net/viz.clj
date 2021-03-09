@@ -62,7 +62,12 @@
   (let [width  1200
         y-step 20
         truncated? (< journal-limit (count journal))
-        step-count (min journal-limit (count journal))
+        ; Truncate journal
+        full-journal journal
+        journal    (if truncated?
+                     (take journal-limit journal)
+                     journal)
+        step-count (count journal)
         ; + 2 because our ys start at 1.5
         ; + 1 for extra node line height at end
         ; + 2 for truncation notice at end
@@ -74,7 +79,9 @@
                              (assoc node-index node (count node-index)))
                            {}
                            nodes)]
-    {:width       width
+    {:journal             journal
+     :full-journal-count  (count full-journal)
+     :width       width
      :height      height
      :step-count  step-count
      :y-step      y-step
@@ -210,7 +217,7 @@
 
 (defn node-lines
   "Takes a layout and renders the vertical gray lines for each node."
-  [layout journal]
+  [layout]
   (cons :g
         (map (fn [node]
                [:line {:stroke "#ccc"
@@ -222,9 +229,9 @@
 
 (defn message-lines
   "Takes a layout and a journal, and produces a set of lines for each message."
-  [layout journal]
-  (->> journal
-       (take journal-limit)
+  [layout]
+  (->> layout
+       :journal
        messages
        (map (partial message-line layout))
        (cons :g)))
@@ -232,7 +239,7 @@
 (defn truncated-notice
   "Takes a layout and a journal, and renders a warning if we had to truncate
   the journal in this rendering."
-  [layout journal]
+  [layout]
   (when (:truncated? layout)
     (let [step (+ 2 (:step-count layout))
           color "#D96918"]
@@ -247,7 +254,8 @@
                :y (y layout (inc step))
                :fill color
                :text-anchor "middle"}
-        (str (- (count journal) journal-limit)
+        (str (- (:full-journal-count layout)
+                (count (:journal layout)))
              " later network events not shown")]])))
 
 (defn glow-filter
@@ -299,8 +307,8 @@ polygon { fill: #000; }"
                (arrowhead)
                (glow-filter)]
               (node-labels      layout)
-              (node-lines       layout journal)
-              (message-lines    layout journal)
-              (truncated-notice layout journal)
+              (node-lines       layout)
+              (message-lines    layout)
+              (truncated-notice layout)
               )]
     (spit filename (xml/emit svg))))
