@@ -26,14 +26,20 @@
             [fipp.edn :refer [pprint]]
             [jepsen [checker :as checker]
                     [store :as store]
-                    [util :as util :refer [linear-time-nanos]]]
+                    [util :as util :refer [linear-time-nanos
+                                           nanos->ms
+                                           ms->nanos]]]
             [maelstrom.util :as u]
-            [maelstrom.net.viz :as viz]
+            [maelstrom.net [message :as msg]
+                           [viz :as viz]]
             [tesser [core :as t]
                     [math :as tm]
                     [utils :as tu]])
   (:import (java.io EOFException)
-           (java.util.concurrent LinkedBlockingQueue)
+           (java.util.concurrent ArrayBlockingQueue
+                                 BlockingQueue
+                                 LinkedBlockingQueue)
+           (java.util.concurrent.locks LockSupport)
            (org.fressian FressianWriter FressianReader)
            (org.fressian.handlers WriteHandler ReadHandler)))
 
@@ -42,14 +48,47 @@
 
 (def write-handlers
   "How should Fressian write different classes?"
-  (-> {}
+  (-> {maelstrom.net.journal.Event
+       {"ev" (reify WriteHandler
+               (write [_ w e]
+                 (.writeTag w "ev" 3)
+                 (.writeObject  w (:type e))
+                 (.writeInt     w (:time e))
+                 (.writeObject  w (:message e))))}
+
+       maelstrom.net.message.Message
+       {"msg" (reify WriteHandler
+               (write [_ w m]
+                 (.writeTag     w "msg" 4)
+                 (.writeInt     w (:id m))
+                 (.writeString  w (:src m))
+                 (.writeString  w (:dest m))
+                 (.writeObject  w (:body m))
+                 ; (.writeObject w nil))
+                 ))}}
+
       (merge fress/clojure-write-handlers)
       fress/associative-lookup
       fress/inheritance-lookup))
 
 (def read-handlers
   "How should Fressian read different tags?"
-  (-> {}
+  (-> {"ev" (reify ReadHandler
+              (read [_ r tag component-count]
+                (assert (= 3 component-count))
+                (Event. (.readObject r)
+                        (.readInt r)
+                        (.readObject r))))
+
+       "msg" (reify ReadHandler
+               (read [_ r tag component-count]
+                 (assert (= 4 component-count))
+                 (maelstrom.net.message.Message.
+                   (.readInt r)
+                   (.readObject r)
+                   (.readObject r)
+                   (.readObject r))))}
+
       (merge fress/clojure-read-handlers)
       fress/associative-lookup))
 
@@ -82,25 +121,36 @@
 
 (defn worker
   "Spawns a thread to write network ops to disk."
-  [^LinkedBlockingQueue queue writer]
+  [^BlockingQueue queue writer]
   (future
     (util/with-thread-name "maelstrom net journal"
-      (loop []
-        (let [event (.take queue)]
-          (if (= event :done)
-            (do (.close ^FressianWriter writer)
-                :done)
-            (do (fress/write-object writer event)
-                (recur))))))))
+      (try
+        (loop []
+          (let [event (.take queue)]
+            (if (= event :done)
+              (do (.close ^FressianWriter writer)
+                  :done)
+              (do (fress/write-object writer event)
+                  (recur)))))
+        (catch InterruptedException e
+          ; Normal shutdown
+          :interrupted)
+        (catch Throwable t
+          ; Log so we know what's going on, because this is going to stall the
+          ; rest of the test
+          (warn t "Error in net journal worker")
+          (throw t))))))
 
 (defn journal
   "Constructs a new journal, including a worker thread to journal network
   events to disk."
   [test]
-  (let [writer   (disk-writer test)
-        queue    (LinkedBlockingQueue. 16384)]
-    {:queue  queue
-     :worker (worker queue writer)}))
+  (let [writer     (disk-writer test)
+        queue-size 32
+        queue      (ArrayBlockingQueue. queue-size)]
+    {:queue-size queue-size
+     :queue      queue
+     :worker     (worker queue writer)}))
 
 (defn close!
   "Closes a journal."
@@ -112,21 +162,47 @@
 (defn log-event!
   "Logs an arbitrary event to a journal."
   [journal event]
-  (.put ^LinkedBlockingQueue (:queue journal) event))
+  (let [; t0                    (System/nanoTime)
+        queue ^BlockingQueue  (:queue journal)
+        queue-size            (:queue-size journal)
+        used-frac             (/ (double (.size queue)) queue-size)
+        ; Compute an exponential backoff so we don't slam into the top of the
+        ; queue; we want to smoothly stabilize at the rate the writer can keep
+        ; up with. This is a totally eyeballed, hardcoded curve which is
+        ; probably bad, but I'm hoping it's better than nothing.
+        ;
+        ; (->> (range 0 1.1 1/10)
+        ;      (map (fn [f] (-> f (- 1/2) (->> (Math/pow 100 )) (- 1) (* 10) int (max 0))))
+        ;      pprint)
+        ; (0 0 0 0 0 0 5 15 29 53 90)
+        backoff (-> used-frac
+                    (- 0.5)
+                    (->> (Math/pow 100))
+                    (- 1)
+                    (* 10)
+                    (max 0))
+        ; t1 (System/nanoTime)
+        _ (when (pos? backoff)
+            (LockSupport/parkNanos (util/ms->nanos backoff)))
+        ; t2 (System/nanoTime)
+        _ (.put ^BlockingQueue (:queue journal) event)
+        ; t3 (System/nanoTime)
+        ]
+;    (when (< 100 (nanos->ms (- t3 t0)))
+;      (info (float (nanos->ms (- t1 t0))) "ms to figure out backoff"
+;            (float (nanos->ms (- t2 t1))) "ms sleeping"
+;            (float (nanos->ms (- t3 t2))) "ms enqueuing")))
+      ))
 
 (defn log-send!
   "Logs a send operation"
   [journal message]
-  (log-event! journal {:type   :send
-                       :time   (linear-time-nanos)
-                       :message message}))
+  (log-event! journal (Event. :send (linear-time-nanos) message)))
 
 (defn log-recv!
   "Logs a receive operation"
   [journal message]
-  (log-event! journal {:type    :recv
-                       :time    (linear-time-nanos)
-                       :message message}))
+  (log-event! journal (Event. :recv (linear-time-nanos) message)))
 
 (defn involves-client?
   "Takes an event and returns true iff it was sent to or received from a
