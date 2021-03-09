@@ -72,7 +72,7 @@
        {"ev" (reify WriteHandler
                (write [_ w e]
                  (.writeTag w "ev" 3)
-                 (.writeObject  w (:type e))
+                 (.writeObject  w (:type e) true)
                  (.writeInt     w (:time e))
                  (.writeObject  w (:message e))))}
 
@@ -81,8 +81,8 @@
                (write [_ w m]
                  (.writeTag     w "msg" 4)
                  (.writeInt     w (:id m))
-                 (.writeString  w (:src m))
-                 (.writeString  w (:dest m))
+                 (.writeObject  w (:src m) true)
+                 (.writeObject  w (:dest m) true)
                  (write-body!   w (:body m))
                  ; (.writeObject w nil))
                  ))}}
