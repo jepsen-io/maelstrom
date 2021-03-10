@@ -24,23 +24,24 @@
             [clojure.data.fressian :as fress]
             [clojure.java.io :as io]
             [fipp.edn :refer [pprint]]
-            [jepsen [checker :as checker]
-                    [store :as store]
+            [jepsen [store :as store]
                     [util :as util :refer [linear-time-nanos
                                            nanos->ms
                                            ms->nanos]]]
             [maelstrom.util :as u]
-            [maelstrom.net [message :as msg]
-                           [viz :as viz]]
+            [maelstrom.net [message :as msg]]
             [tesser [core :as t]
                     [math :as tm]
                     [utils :as tu]])
-  (:import (java.io EOFException)
+  (:import (java.io Closeable
+                    File
+                    EOFException)
            (java.util BitSet)
            (java.util.concurrent ArrayBlockingQueue
                                  BlockingQueue
                                  LinkedBlockingQueue)
            (java.util.concurrent.locks LockSupport)
+           (maelstrom.net.message Message)
            (org.fressian FressianWriter FressianReader)
            (org.fressian.handlers WriteHandler ReadHandler)
            (io.lacuna.bifurcan ISet
@@ -49,7 +50,7 @@
                                Set)))
 
 ; We're going to doing a LOT of event manipulation, so speed matters.
-(defrecord Event [type ^long time message])
+(defrecord Event [^long id ^long time type message])
 
 (defn write-body!
   "We burn a huge amount of time in interning keywords during body
@@ -71,9 +72,10 @@
   (-> {maelstrom.net.journal.Event
        {"ev" (reify WriteHandler
                (write [_ w e]
-                 (.writeTag w "ev" 3)
-                 (.writeObject  w (:type e) true)
+                 (.writeTag     w "ev" 4)
+                 (.writeInt     w (:id e))
                  (.writeInt     w (:time e))
+                 (.writeObject  w (:type e) true)
                  (.writeObject  w (:message e))))}
 
        maelstrom.net.message.Message
@@ -83,9 +85,7 @@
                  (.writeInt     w (:id m))
                  (.writeObject  w (:src m) true)
                  (.writeObject  w (:dest m) true)
-                 (write-body!   w (:body m))
-                 ; (.writeObject w nil))
-                 ))}}
+                 (write-body!   w (:body m))))}}
 
       (merge fress/clojure-write-handlers)
       fress/associative-lookup
@@ -95,9 +95,10 @@
   "How should Fressian read different tags?"
   (-> {"ev" (reify ReadHandler
               (read [_ r tag component-count]
-                (assert (= 3 component-count))
-                (Event. (.readObject r)
+                (assert (= 4 component-count))
+                (Event. (.readInt r)
                         (.readInt r)
+                        (.readObject r)
                         (.readObject r))))
 
        "msg" (reify ReadHandler
@@ -112,24 +113,42 @@
       (merge fress/clojure-read-handlers)
       fress/associative-lookup))
 
-(defn file
-  "What file do we use for storing the journal?"
+(def journal-dir-name
+  "net-journal")
+
+(defn journal-dir
+  "Where do we store journal chunks for this test?"
   [test]
-  (store/path test "net-journal.fressian"))
+  (store/path test journal-dir-name))
+
+(defn file!
+  "What file do we use for storing this stripe of a journal?"
+  [test stripe]
+  (store/path! test journal-dir-name (str stripe ".fressian")))
 
 (defn ^FressianWriter disk-writer
   "Constructs a new Fressian Writer for a test's journal."
-  [test]
-  (-> (file test)
+  [test stripe]
+  (-> (file! test stripe)
       io/output-stream
       (fress/create-writer :handlers write-handlers)))
 
 (defn ^FressianReader disk-reader
   "Constructs a new Fressian Reader for a test's journal."
-  [test]
-  (-> (file test)
+  [test stripe]
+  (-> (file! test stripe)
       io/input-stream
       (fress/create-reader :handlers read-handlers)))
+
+(defn disk-readers
+  "Constructs a vector of readers, one per stripe in this test's journal."
+  [test]
+  (->> (journal-dir test)
+       file-seq
+       (filter #(re-find #"\.fressian$" (.getName ^File %)))
+       (mapv (fn [file]
+               (-> (io/input-stream file)
+                   (fress/create-reader :handlers read-handlers))))))
 
 (defn reader-seq
   "Constructs a lazy sequence of journal operations from a Fressian reader."
@@ -162,67 +181,62 @@
           (throw t))))))
 
 (defn journal
-  "Constructs a new journal, including a worker thread to journal network
-  events to disk."
+  "Constructs a new journal: a map of:
+
+    :test         The test
+    :next-stripe  An atom used to assign stripe numbers
+    :local-writer The local thread's writer
+    :next-index   An atom long used to establish the order of journal events
+    :writers      An atom vector of writers, use to close down the journal"
   [test]
-  (let [writer     (disk-writer test)
-        queue-size 32
-        queue      (ArrayBlockingQueue. queue-size)]
-    {:queue-size queue-size
-     :queue      queue
-     :worker     (worker queue writer)}))
+  {:test          test
+   :next-stripe   (atom -1)
+   :local-writer  (ThreadLocal.)
+   :next-id       (atom -1)
+   :writers       (atom [])})
 
 (defn close!
   "Closes a journal."
   [journal]
-  (.put (:queue journal) :done)
-  ; Wait for worker to complete queue
-  @(:worker journal))
+  ; Close each writer
+  (doseq [^FressianWriter w @(:writers journal)]
+    (.close w)))
+
+(defn ^FressianWriter local-writer
+  "Returns the writer for the current thread, possibly opening a new one."
+  [journal]
+  (let [^ThreadLocal local-writer (:local-writer journal)]
+    ; Return local writer if we already have it
+    (or (.get local-writer)
+        ; Ah, we need to create a new writer. Pick a new stripe ID...
+        (let [stripe (swap! (:next-stripe journal) inc)
+              ; Create a writer
+              writer (disk-writer (:test journal) stripe)]
+          ; And record it
+          (swap! (:writers journal) conj writer)
+          (.set local-writer writer)
+          writer))))
 
 (defn log-event!
   "Logs an arbitrary event to a journal."
   [journal event]
-  (let [; t0                    (System/nanoTime)
-        queue ^BlockingQueue  (:queue journal)
-        queue-size            (:queue-size journal)
-        used-frac             (/ (double (.size queue)) queue-size)
-        ; Compute an exponential backoff so we don't slam into the top of the
-        ; queue; we want to smoothly stabilize at the rate the writer can keep
-        ; up with. This is a totally eyeballed, hardcoded curve which is
-        ; probably bad, but I'm hoping it's better than nothing.
-        ;
-        ; (->> (range 0 1.1 1/10)
-        ;      (map (fn [f] (-> f (- 1/2) (->> (Math/pow 100 )) (- 1) (* 10) int (max 0))))
-        ;      pprint)
-        ; (0 0 0 0 0 0 5 15 29 53 90)
-        backoff (-> used-frac
-                    (- 0.5)
-                    (->> (Math/pow 100))
-                    (- 1)
-                    (* 10)
-                    (max 0))
-        ; t1 (System/nanoTime)
-        _ (when (pos? backoff)
-            (LockSupport/parkNanos (util/ms->nanos backoff)))
-        ; t2 (System/nanoTime)
-        _ (.put ^BlockingQueue (:queue journal) event)
-        ; t3 (System/nanoTime)
-        ]
-;    (when (< 100 (nanos->ms (- t3 t0)))
-;      (info (float (nanos->ms (- t1 t0))) "ms to figure out backoff"
-;            (float (nanos->ms (- t2 t1))) "ms sleeping"
-;            (float (nanos->ms (- t3 t2))) "ms enqueuing")))
-      ))
+  (fress/write-object (local-writer journal) event))
 
 (defn log-send!
   "Logs a send operation"
   [journal message]
-  (log-event! journal (Event. :send (linear-time-nanos) message)))
+  (log-event! journal (Event. (swap! (:next-id journal) inc)
+                              (linear-time-nanos)
+                              :send
+                              message)))
 
 (defn log-recv!
   "Logs a receive operation"
   [journal message]
-  (log-event! journal (Event. :recv (linear-time-nanos) message)))
+  (log-event! journal (Event. (swap! (:next-id journal) inc)
+                              (linear-time-nanos)
+                              :recv
+                              message)))
 
 (defn involves-client?
   "Takes an event and returns true iff it was sent to or received from a
@@ -231,15 +245,14 @@
   (u/involves-client? message))
 
 (defn without-init
-  "Strips out initialization messages from the journal, so we can focus on the
-  algorithm itself."
-  [journal]
-  (->> journal
-       (remove (fn [^Event event]
-                 (let [t (:type (.body ^maelstrom.net.message.Message
-                                       (.message event)))]
-                   (or (= "init" t)
-                       (= "init_ok" t)))))))
+  "A fold which strips out initialization messages."
+  [& [f]]
+  (t/remove (fn [^Event event]
+              (let [t (:type (.body ^maelstrom.net.message.Message
+                                    (.message event)))]
+                (or (= t "init")
+                    (= t "init_ok"))))
+            f))
 
 ;; Analysis
 
@@ -305,50 +318,30 @@
   "Fold which filters a journal to just messages between servers."
   (t/remove involves-client?))
 
-(defn basic-stats
-  "A fold for aggregate statistics over a journal."
-  [journal]
-  (->> journal
-       (t/fuse {:send-count (t/count sends)
-                :recv-count (t/count recvs)
-                :msg-count  (->> (t/map (comp :id :message))
-                                 ; (fast-cardinality))})))
-                                 (dense-int-cardinality))})))
+(t/deftransform up-to-event
+  "A fold which selects all contiguous events, in event order, up to but not
+  including id n. Relies on the fact that event IDs are allocated contiguously
+  0, 1, 2... and unique across all chunks."
+  [n]
+  (assert (nil? downstream))
+  {:reducer-identity (partial transient [])
+   :reducer          (fn reducer [taken ^Event e]
+                       (if (< (.id e) n)
+                         ; Still in bounds
+                         (conj! taken e)
+                         ; Done
+                         (reduced taken)))
+   :post-reducer      persistent!
+   :combiner-identity (constantly [])
+   :combiner          into
+   :post-combiner     (partial sort-by :id)})
 
-(def stats
-  (t/fuse {:all     (->> (t/map identity) basic-stats)
-           :clients (->> clients          basic-stats)
-           :servers (->> servers          basic-stats)}))
-
-(defn checker
-  "A Jepsen checker which extracts the journal and analyzes its statistics."
-  []
-  (reify checker/Checker
-    (check [this test history opts]
-      (let [journal (with-open [r (disk-reader test)]
-                      (vec (reader-seq r)))
-            ; Fire off the plotter immediately; it can run without us
-            plot (future
-                   (viz/plot-analemma! (without-init journal)
-                                       (store/path! test "messages.svg")))
-            ;_ (info :journal (with-out-str (pprint (take 10 journal))))
-            stats   (t/tesser (tu/chunk-vec 65536 journal) stats)
-            ; Add msgs-per-op stats, so we can tell roughly how many messages
-            ; exchanged per logical operation
-            op-count (->> history
-                          (remove (comp #{:nemesis} :process))
-                          (filter (comp #{:invoke} :type))
-                          count)
-            stats (if (zero? op-count)
-                    stats
-                    (-> stats
-                        (assoc-in [:all :msgs-per-op]
-                                  (float (/ (:msg-count (:all stats))
-                                            op-count)))
-                        (assoc-in [:servers :msgs-per-op]
-                                  (float (/ (:msg-count (:servers stats))
-                                            op-count)))))]
-
-        ; Block on plot
-        @plot
-        (assoc stats :valid? true)))))
+(defn tesser-journal
+  "Runs a Tesser fold over a test's journal: each stripe used as a single
+  chunk."
+  [test fold]
+  (let [readers (disk-readers test)]
+    (try
+      (t/tesser (mapv reader-seq readers) fold)
+      (finally (doseq [^Closeable r readers]
+                 (.close r))))))

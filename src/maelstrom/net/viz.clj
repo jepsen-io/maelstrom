@@ -6,7 +6,9 @@
             [clojure.tools.logging :refer [info warn]]
             [analemma [xml :as xml]
                       [svg :as svg]]
-            [maelstrom [util :as u]]))
+            [jepsen [store :as store]]
+            [maelstrom [util :as u]]
+            [maelstrom.net [journal :as j]]))
 
 (def journal-limit
   "SVG rendering is pretty expensive; we stop rendering after this many
@@ -254,9 +256,7 @@
                :y (y layout (inc step))
                :fill color
                :text-anchor "middle"}
-        (str (- (:full-journal-count layout)
-                (count (:journal layout)))
-             " later network events not shown")]])))
+        (str "Additional network events not shown")]])))
 
 (defn glow-filter
   "A filter to make text stand out better by adding a white glow"
@@ -281,8 +281,18 @@
 (defn plot-analemma!
   "Renders an SVG plot using Analemma. Hopefully faster than Dali, which uses
   reflection EVERYWHERE."
-  [journal filename]
-  (let [layout (layout journal)
+  [test]
+  (let [; First, we need to actually get a subset of the journal to render.
+        ; We just need to go far enough to tell whether we truncated, which is
+        ; the journal limit plus init messages (2 events / msg * 2 messages /
+        ; rpc), plus 1
+        max-id (+ journal-limit (* (count (:nodes test)) 2 2) 1)
+        journal (->> (j/without-init)
+                     (j/up-to-event max-id)
+                     (j/tesser-journal test))
+        ; Compute SVG layout
+        layout (layout journal)
+        ; Render doc
         svg (svg/svg {"version" "2.0"
                       "width"  (+ (:width layout 50))
                       "height" (:height layout)}
@@ -310,5 +320,6 @@ polygon { fill: #000; }"
               (node-lines       layout)
               (message-lines    layout)
               (truncated-notice layout)
-              )]
+              )
+        filename (store/path test "messages.svg")]
     (spit filename (xml/emit svg))))

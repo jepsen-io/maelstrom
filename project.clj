@@ -5,7 +5,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :main maelstrom.core
   :jvm-opts ["-Djava.awt.headless=true"
-             "-agentpath:/home/aphyr/yourkit/bin/linux-x86-64/libyjpagent.so=sampling,exceptions=disable,probe_disable=*"
+             ; "-agentpath:/home/aphyr/yourkit/bin/linux-x86-64/libyjpagent.so=sampling,exceptions=disable,probe_disable=*"
              ]
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [jepsen "0.2.4-SNAPSHOT"]

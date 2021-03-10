@@ -10,7 +10,7 @@
                        [net :as net]
                        [nemesis :as nemesis]
                        [process :as process]]
-            [maelstrom.net.journal :as net.journal]
+            [maelstrom.net.checker :as net.checker]
             [maelstrom.workload [broadcast :as broadcast]
                                 [echo :as echo]
                                 [g-set :as g-set]
@@ -85,7 +85,7 @@
                         :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (checker/stats)
-                        :net        (net.journal/checker)
+                        :net        (net.checker/checker)
                         :workload   (:checker workload)})
             :generator generator
             :pure-generators true})))
