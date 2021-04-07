@@ -38,7 +38,7 @@ class Net():
     def __init__(self):
         """Constructs a new network client."""
         self.node_id = None     # Our local node ID
-	self.next_msg_id = 0    # The next message ID we're going to allocate
+        self.next_msg_id = 0    # The next message ID we're going to allocate
         self.handlers = {}      # A map of message types to handler functions
         self.callbacks = {}     # A map of message IDs to response handlers
 
@@ -198,7 +198,7 @@ class RaftNode():
         # Heartbeats & timeouts
         self.election_timeout = 2       # Time before election, in seconds
         self.heartbeat_interval = 1     # Time between heartbeats, in seconds
-	self.min_replication_interval = 0.05	# Don't replicate TOO frequently
+        self.min_replication_interval = 0.05	# Don't replicate TOO frequently
         self.election_deadline = 0      # Next election, in epoch seconds
         self.step_down_deadline = 0     # When to step down automatically
         self.last_replication = 0       # Last replication, in epoch seconds
@@ -213,17 +213,17 @@ class RaftNode():
         self.voted_for = None   # What node did we vote for in this term?
         self.commit_index = 0   # The index of the highest committed entry
         self.last_applied = 1   # The last entry we applied to the state machine
-	self.leader = None	# Who do we think the leader is?
+        self.leader = None	# Who do we think the leader is?
 
-	# Leader state
+        # Leader state
         self.next_index = None   # A map of nodes to the next index to replicate
         self._match_index = None # Map of nodes to the highest log entry known
                                  # to be replicated on that node.
 
         # Components
         self.net = Net()
-	self.log = Log()
-	self.state_machine = KVStore()
+        self.log = Log()
+        self.state_machine = KVStore()
         self.setup_handlers()
 
     def other_nodes(self):
@@ -311,9 +311,9 @@ class RaftNode():
     def become_follower(self):
         """Become a follower"""
         self.state = 'follower'
-	self.next_index = None
-	self._match_index = None
-	self.leader = None
+        self.next_index = None
+        self._match_index = None
+        self.leader = None
         self.reset_election_deadline()
         log('Became follower for term', self.current_term)
 
@@ -334,7 +334,7 @@ class RaftNode():
             raise RuntimeError('Should be a candidate')
 
         self.state = 'leader'
-	self.leader = None
+        self.leader = None
         self.last_replication = 0 # Start replicating immediately
         # We'll start by trying to replicate our most recent entry
         self.next_index = {n: self.log.size() + 1 for n in self.other_nodes()}
@@ -548,14 +548,14 @@ class RaftNode():
         self.net.on('append_entries', append_entries)
 
 
-	# Handle client KV requests
-	def kv_req(msg):
+        # Handle client KV requests
+        def kv_req(msg):
             if self.state == 'leader':
                 # Record who we should tell about the completion of this op
                 op = msg['body']
                 op['client'] = msg['src']
                 self.log.append([{'term': self.current_term, 'op': op}])
-	    elif self.leader:
+            elif self.leader:
                 # We're not the leader, but we can proxy to one
                 msg['dest'] = self.leader
                 self.net.send_msg(msg)
@@ -566,23 +566,23 @@ class RaftNode():
                     'text': 'not a leader'
                     })
 
-	self.net.on('read', kv_req)
-	self.net.on('write', kv_req)
-	self.net.on('cas', kv_req)
+        self.net.on('read', kv_req)
+        self.net.on('write', kv_req)
+        self.net.on('cas', kv_req)
 
     def main(self):
         """Mainloop."""
         log('Online.')
 
-	while True:
-	    try:
+        while True:
+            try:
                 self.net.process_msg() or \
-		    self.step_down_on_timeout() or \
-		    self.replicate_log() or \
-                    self.election() or \
-		    self.advance_commit_index() or \
-                    self.advance_state_machine() or \
-                    time.sleep(0.001)
+                self.step_down_on_timeout() or \
+                self.replicate_log() or \
+                self.election() or \
+                self.advance_commit_index() or \
+                self.advance_state_machine() or \
+                time.sleep(0.001)
 
             except KeyboardInterrupt:
                 log("Aborted by interrupt!")
