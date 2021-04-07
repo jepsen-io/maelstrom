@@ -15,7 +15,6 @@ import traceback
 
 def log(*args):
     """Helper function for logging stuff to stderr"""
-    first = True
     sys.stderr.write(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f "))
     for i in range(len(args)):
         sys.stderr.write(str(args[i]))
@@ -361,7 +360,7 @@ class RaftNode():
     # Actions for followers/candidates
 
     def election(self):
-        "If it's been long enough, trigger a leader election."""
+        """If it's been long enough, trigger a leader election."""
         if self.election_deadline < time.time():
             if self.state == 'follower' or self.state == 'candidate':
                 # Let's go!
