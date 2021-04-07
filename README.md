@@ -34,6 +34,11 @@ network topologies, latency distributions, and faults like network partitions.
 Maelstrom also offers [simulated services](/doc/services.md) that you can use
 to build more complex systems.
 
+It's built for testing toy systems, but don't let that fool you: Maelstrom's
+reasonably fast and can handle simulated clusters of 25+ nodes. On a a 48-way
+Xeon, it can use 94% of all cores, pushing upwards of 60,000 network
+messages/sec.
+
 ## Documentation
 
 The Maelstrom Guide will take you through writing several different types of
