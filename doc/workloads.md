@@ -255,7 +255,7 @@ Response:
 ### RPC: Write! 
 
 Blindly overwrites the value of a key. Creates keys if they do not presently
-exist. Servers should respond with a `read_ok` response once the write is
+exist. Servers should respond with a `write_ok` response once the write is
 complete. 
 
 Request:
