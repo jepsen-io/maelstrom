@@ -88,7 +88,7 @@ And to start the tasks, we'll run through each task and start a thread for it.
 
 Now let's create a new file for our G-Set node: `g_set.rb`. We'll keep track of
 our elements in `@set`, and return its value on reads. For adds, we'll merge
-the added value into @set.
+the added value into `@set`.
 
 ```rb
 class GSetServer

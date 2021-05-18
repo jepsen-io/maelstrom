@@ -549,4 +549,4 @@ broadcast to five nodes, because we had to keep retrying while partitions were
 active.
 
 This sums up our work with broadcast systems. Next, we'll look at merging
-updates to different nodes by using CRDTs.
+updates to different nodes by using [CRDTs](/doc/04-crdts/index.md).
