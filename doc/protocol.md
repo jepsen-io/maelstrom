@@ -88,7 +88,7 @@ like so:
 {
   "type":     "init",
   "msg_id":   1,
-  "node_id":  "n3",
+  "node_id":  "n1",
   "node_ids": ["n1", "n2", "n3"]
 }
 ```
@@ -120,7 +120,7 @@ the request which caused this error.
 
 The `code` is an integer which indicates the type of error which occurred.
 Maelstrom defines several error types, and you can also invent your own.
-Codes 0-9999 are reserved for Maelstrom's use; codes 1000 and above are free
+Codes 0-9999 are reserved for Maelstrom's use; codes 10000 and above are free
 for your own purposes.
 
 The `text` field is a free-form string. It is optional, and may contain any
