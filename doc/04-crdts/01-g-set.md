@@ -33,7 +33,6 @@ keep track of a list of tasks we'd like to run once the node starts, and, once w
 
 ```rb
   def initialize
-    def initialize
     @node_id = nil
     @node_ids = nil
     @next_msg_id = 0
