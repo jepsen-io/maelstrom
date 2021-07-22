@@ -367,7 +367,7 @@ Each micro-op is a 3-element array comprising a function, key, and value:
 
 There are two functions. A *read* observes the current value of a specific
 key. `["r", 5, [1, 2]]` denotes that a read of key 5 observed the list `[1,
-2]`. When clients submit writes, they leave their values `null`:  `["r", 5,
+2]`. When clients submit reads, they leave their values `null`:  `["r", 5,
 null]`. The server processing the transaction should replace that value with
 whatever the observed value is for that key: `["r", 5, [1, 2]]`.
 
