@@ -1,4 +1,4 @@
-# Chapter 5: Raft
+# Chapter 6: Raft
 
 In this chapter we write a distributed, linearizable key-value store using the
 Raft consensus algorithm.
