@@ -136,6 +136,9 @@ What about writes? `lin-kv` doesn't *have* an `append` operation natively...
 but we could read the current value, modify it, and write it back using a
 compare-and-set! That'd give us atomic list append!
 
+Note `create_if_not_exists` is supported by the _service_ `lin-kv`, which is
+different than the _workload_. Reference the [service documentation](https://github.com/jepsen-io/maelstrom/blob/main/doc/services.md) for using built-in services.
+
 ```rb
       when 'append'
         txn2 << op

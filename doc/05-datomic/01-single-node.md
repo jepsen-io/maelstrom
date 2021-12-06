@@ -94,7 +94,7 @@ INFO [2021-02-26 10:01:36,788] n3 stderr - maelstrom.process /home/aphyr/maelstr
 Right, so we're going to need a handler for the `txn` message type. Let's add
 one. We'll just... send back exactly the same transaction we got, without doing anything to it. See what happens.
 
-```clj
+```rb
     @node.on 'txn' do |msg|
       txn = msg[:body][:txn]
       @node.log "\nTxn: #{txn}"
@@ -206,7 +206,7 @@ sequentially.
       f, k, v = op
       case f
       when 'r'
-        txn2 << [f, k, @state[k]]
+        txn2 << [f, k, (@state[k] or [])]
       when 'append'
         txn2 << op
         list = (@state[k] or [])

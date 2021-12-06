@@ -593,3 +593,12 @@ message bounces around the network until every node has received it.
 
 In the [next section](02-performance.md), we'll ask about the performance of
 this broadcast model, and explore alternatives.
+
+
+### Clojure implementations
+
+If you want to run the `clojure` implementation of the gossip server, first install [babashka](https://github.com/babashka/babashka) and then run
+
+```
+$ ./maelstrom test -w broadcast --bin demo/clojure/gossip.clj --time-limit 10  --nemesis partition --log-stderr
+```

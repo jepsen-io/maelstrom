@@ -213,12 +213,21 @@
                                 :dist (:latency-dist o)})
                (dissoc :latency-dist)))))
 
+(defn add-args
+  "Adds non-option arguments as :args into parsed options map. :args value is
+  used as list of arguments for the binary which runs a node."
+  [parsed]
+  (let [a (:arguments parsed)
+        o (:options parsed)]
+    (assoc parsed :options (assoc o :args a))))
+
 (defn opt-fn
   "Post-processes the parsed CLI options structure."
   [parsed]
   (-> parsed
       parse-latency
       parse-node-count
+      add-args
       cli/test-opt-fn))
 
 (defn -main
