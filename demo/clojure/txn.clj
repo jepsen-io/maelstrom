@@ -127,24 +127,16 @@
           txn))
 
 (defn map->pairs
-  "Convert a map to a flat vector of [k v k v ...] pairs. Helpful for JSON
+  "Convert a map to a flat list of [k v k v ...] pairs. Helpful for JSON
   serialization of maps."
   [m]
-  (reduce (fn [pairs [k v]]
-            (conj pairs k v))
-          []
-          m))
+  (mapcat identity m))
 
 (defn pairs->map
   "Converts a flat vector of [k v k v ...] pairs to a map. Helpful for JSON
   deserialization of maps."
   [pairs]
-  (loop [m     {}
-         pairs pairs]
-    (if-not (seq pairs)
-      m
-      (let [[k v & pairs'] pairs]
-        (recur (assoc m k v) pairs')))))
+  (->> pairs (partition 2) (map vec) (into {})))
 
 (def root-service
   "What service stores the root?"
