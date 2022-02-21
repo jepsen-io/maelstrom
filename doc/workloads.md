@@ -380,8 +380,8 @@ unchanged.
 Unlike lin-kv, nonexistent keys should be returned as `null`. Lists are
 implicitly created on first append.
 
-This workload can check many kinds of consistency levels. See the
-`--consistency-level` CLI option for details. 
+This workload can check many kinds of consistency models. See the
+`--consistency-models` CLI option for details. 
 
 ### RPC: Txn! 
 
