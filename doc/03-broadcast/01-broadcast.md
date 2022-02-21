@@ -519,7 +519,7 @@ traffic. Let's take a look at `messages.svg` to see what's going on:
 
 Aha! We've constructed an *infinite loop*: when one server receives a message,
 it tells its neighbors, who promptly turn around and tell *their* neighbors,
-and the message richochets around the network forever, amplified by a factor of
+and the message ricochets around the network forever, amplified by a factor of
 `neighbors.count` at each step. We should avoid broadcasting a message if we
 already have it.
 

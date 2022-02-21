@@ -272,7 +272,7 @@ empty (or in this case, trivial) log is enough to get leader election going.
 ## Requesting Votes
 
 When we become a candidate, we need to broadcast a request for votes to all
-other nodes in the cluster, and accumulate reponses as they arrive. Let's
+other nodes in the cluster, and accumulate responses as they arrive. Let's
 modify our `Node` class to include a broadcast rpc method, which does just
 that:
 

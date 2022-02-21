@@ -196,7 +196,7 @@ class State
 And when it comes time to execute a transaction, we'll make sure to thread that
 node and idgen into the Map loader. We also need to `save!` the map before
 trying to CaS it to a new value: we don't want to create a map with thunks that
-noboby else can read.
+nobody else can read.
 
 ```rb
   def transact!(txn)

@@ -40,7 +40,7 @@ This plot, from `elle/G-single-realtime/0.svg`, shows the anomaly that my
 particular test found--yours may vary. Each segmented rectangle is a single
 transaction: `a 9 2` means "append 2 to key 9" and `r 9 [2]` means "read key
 9's value as [2]". Edges show dependencies between transactions: `rt` means
-thatone transaction completed before another began, `wr` means that one
+that one transaction completed before another began, `wr` means that one
 transaction wrote something another observed, and `rw` means that one
 transaction observed a state overwritten by a later transaction.
 
