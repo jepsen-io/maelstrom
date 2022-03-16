@@ -255,7 +255,7 @@ Response:
 ### RPC: Write! 
 
 Blindly overwrites the value of a key. Creates keys if they do not presently
-exist. Servers should respond with a `write_ok` response once the write is
+exist. Servers should respond with a `read_ok` response once the write is
 complete. 
 
 Request:
@@ -367,7 +367,7 @@ Each micro-op is a 3-element array comprising a function, key, and value:
 
 There are two functions. A *read* observes the current value of a specific
 key. `["r", 5, [1, 2]]` denotes that a read of key 5 observed the list `[1,
-2]`. When clients submit reads, they leave their values `null`:  `["r", 5,
+2]`. When clients submit writes, they leave their values `null`:  `["r", 5,
 null]`. The server processing the transaction should replace that value with
 whatever the observed value is for that key: `["r", 5, [1, 2]]`.
 

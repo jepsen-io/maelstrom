@@ -88,7 +88,7 @@ like so:
 {
   "type":     "init",
   "msg_id":   1,
-  "node_id":  "n1",
+  "node_id":  "n3",
   "node_ids": ["n1", "n2", "n3"]
 }
 ```
@@ -106,22 +106,21 @@ In response to a Maelstrom RPC request, a node may respond with an *error*
 message, whose `body` is a JSON object like so:
 
 ```json
-{
-  "type":        "error",
-  "in_reply_to": 5,
-  "code":        11,
-  "text":        "Node n5 is waiting for quorum and cannot service requests yet"
+{"type":        "error",
+ "in_reply_to": 5,
+ "code":        11,
+ "text":        "Node n5 is waiting for quorum and cannot service requests yet"
 }
 ```
 
-The `type` of an error body is always `"error"`.
+The `type` of an error body is always `\"error\"`.
 
 As with all RPC responses, the `in_reply_to` field is the `msg_id` of
 the request which caused this error.
 
 The `code` is an integer which indicates the type of error which occurred.
 Maelstrom defines several error types, and you can also invent your own.
-Codes 0-9999 are reserved for Maelstrom's use; codes 10000 and above are free
+Codes 0-9999 are reserved for Maelstrom's use; codes 1000 and above are free
 for your own purposes.
 
 The `text` field is a free-form string. It is optional, and may contain any
