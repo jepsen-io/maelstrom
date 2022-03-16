@@ -13,7 +13,7 @@ lists or appends.
 The workload we'll use for this chapter is called
 [txn-list-append](/doc/workloads.md#workload-txn-list-append). Our servers need
 to support a single RPC type `txn`, which takes an incomplete transaction (e.g.
-one where reads have no values) transaction to execute, and returns the
+one where reads have no values) to execute, and returns the
 completed version of that transaction (i.e. with reads filled in).
 
 ```js
@@ -80,7 +80,7 @@ Transactor.new.node.main!
 ```
 
 ```sh
-$ chmod +x datomic.rb`
+$ chmod +x datomic.rb
 ```
 
 Now, let's fire up Maelstrom, and see what kind of messages we get from our workload.
@@ -244,7 +244,8 @@ end
 ```
 
 ```clj
-./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 1...
+./maelstrom test -w txn-list-append --bin datomic.rb --time-limit 10 --node-count 1
+...
 Everything looks good! ヽ(‘ー`)ノ
 ```
 

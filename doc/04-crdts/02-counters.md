@@ -277,5 +277,5 @@ Everything looks good! ヽ(‘ー`)ノ
 
 It is! We've successfully built an AP counter service!
 
-In the next chapter, we'll build a transactional key-value store on top of
+In the [next chapter](/doc/05-datomic/01-single-node.md), we'll build a transactional key-value store on top of
 existing Maelstrom services.
