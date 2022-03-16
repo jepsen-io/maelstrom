@@ -1,4 +1,4 @@
-(defproject maelstrom "0.2.1-SNAPSHOT"
+(defproject maelstrom "0.2.1"
   :description "A test bench for writing toy distributed systems"
   :url "https://github.com/jepsen-io/maelstrom"
   :license {:name "Eclipse Public License"
