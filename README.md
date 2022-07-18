@@ -181,7 +181,7 @@ exec java -jar target/raft.jar
 
 ## License
 
-Copyright © 2017, 2020, 2021 Kyle Kingsbury, Kit Patella, & Jepsen, LLC
+Copyright © 2017, 2020--2022 Kyle Kingsbury, Kit Patella, & Jepsen, LLC
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.

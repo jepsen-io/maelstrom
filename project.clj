@@ -1,4 +1,4 @@
-(defproject maelstrom "0.2.1"
+(defproject maelstrom "0.2.2-SNAPSHOT"
   :description "A test bench for writing toy distributed systems"
   :url "https://github.com/jepsen-io/maelstrom"
   :license {:name "Eclipse Public License"
@@ -8,7 +8,7 @@
              ; "-agentpath:/home/aphyr/yourkit/bin/linux-x86-64/libyjpagent.so=sampling,exceptions=disable,probe_disable=*"
              ]
   :dependencies [[org.clojure/clojure "1.10.3"]
-                 [jepsen "0.2.6"]
+                 [jepsen "0.2.8-SNAPSHOT"]
                  [amalloy/ring-buffer "1.3.1"]
                  [cheshire "5.10.2"]
                  [byte-streams "0.2.4"]

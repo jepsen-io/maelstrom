@@ -13,6 +13,7 @@
             [maelstrom.net.checker :as net.checker]
             [maelstrom.workload [broadcast :as broadcast]
                                 [echo :as echo]
+                                [kafka :as kafka]
                                 [g-set :as g-set]
                                 [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
@@ -31,6 +32,7 @@
   "A map of workload names to functions which construct workload maps."
   {:broadcast       broadcast/workload
    :echo            echo/workload
+   :kafka           kafka/workload
    :g-set           g-set/workload
    :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload

@@ -25,6 +25,7 @@ messages that you'll need to handle.
 - [Echo](#workload-echo)
 - [G-counter](#workload-g-counter)
 - [G-set](#workload-g-set)
+- [Kafka](#workload-kafka)
 - [Lin-kv](#workload-lin-kv)
 - [Pn-counter](#workload-pn-counter)
 - [Txn-list-append](#workload-txn-list-append)
@@ -220,6 +221,129 @@ Response:
 ```clj
 {:type (eq "read_ok"),
  :value [Any],
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+
+## Workload: Kafka 
+
+A simplified version of a Kafka-style stream processing system. Servers
+provide a set of append-only logs identified by *keys*. Each integer *offset*
+in a log has one *message*. Offsets may be sparse: not every offset
+must contain a message.
+
+A client appends a message to a log by making a `send` RPC request with the
+keyn and value they want to append; the server responds with the offset it
+assigned for that particular message.
+
+To read a log, a client issues a `subscribe` RPC request with a set of keys
+it wants to receive messages from; the server is responsible for tracking
+that this particular client has subscribed to those keys.
+
+After having subscribed, the client can issue a `poll` request. In response,
+the server sends a `poll_ok` RPC response, containing a map of keys to
+sequences of messages. We'll talk about exactly *which* messages in a moment.
+
+Since messages delivered in response to a poll might not actually be
+*processed* if a client crashes, the client needs to inform the server that
+messages have been successfully processed. To do this, it periodically sends
+a *commit_offsets* RPC, containing a map of keys to the offsets it has
+processed. Servers acknowledge this with a `commit_ok` response. The servers
+should collectively keep track of this committed offset, and use it to
+constrain which messages are delivered.
+
+The checker for this workload detects a number of anomalies.
+
+If a client observes (e.g.) offset 10 of key `k1`, but *not* offset 5, and we
+know that offset 5 exists, we call that a *lost write*. If we know offset 11
+exists, but it is never observed in a poll, we call that write *unobserved*.
+There is no recency requirement: servers are free to acknowledge a sent
+message, but not return it in any polls for an arbitrarily long time.
+
+Ideally, we expect client offsets from both sends and polls to be strictly
+monotonically increasing, and to observe every message. If offsets go
+backwards--e.g. if a client observes offset 4 then 2, or 2 then 2--we call
+that *nonomonotonic*. It's an *internal nonmonotonic* error if offsets fail
+to increase in the course of a single transaction, or single poll. It's an
+*external nonmonotonic* error if offsets fail to increase *between* two
+transactions.
+
+If we skip over an offset that we know exists, we call that a *skip*. Like
+nonmonotonic errors, a skip error can be internal (in a single transaction or
+poll) or external (between two transactions).
+
+In order to prevent these anomalies, each server should track each client's
+offsets for each key. When a client issues a *subscribe* operation which
+subscribes to a new key, the client's offset for that key can change
+arbitrarily--most likely, it should be set to the committed offset for that
+key. Since we expect the offset to change on a subscribe operation, external
+nonmonotonic and skip errors are not tracked across `subscribe` operations. 
+
+### RPC: Subscribe! 
+
+Informs the server that this client wishes to receive messages from the
+given set of keys. The server should remember this mapping, and on subsequent
+polls, return messages from those keys. 
+
+Request:
+
+```clj
+{:type (eq "subscribe"), :keys [Any], :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "subscribe_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Send! 
+
+Sends a single message to a specific key. The server should assign a unique
+offset in the key for this message, and return a `send_ok` response with that
+offest. 
+
+Request:
+
+```clj
+{:type (eq "send"), :key Any, :msg Any, :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "send_ok"),
+ :offset Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Poll! 
+
+Requests some messages from whatever topics the client has currently
+subscribed to. The server should respond with a `poll_ok` response,
+containing a map of keys to vectors of [offest, message] pairs. 
+
+Request:
+
+```clj
+{:type (eq "poll"), :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "poll_ok"),
+ :msgs
+ {Any
+  [[#schema.core.One{:schema Int, :optional? false, :name "offset"}
+    #schema.core.One{:schema Any, :optional? false, :name "msg"}]]},
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
