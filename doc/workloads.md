@@ -281,27 +281,6 @@ arbitrarily--most likely, it should be set to the committed offset for that
 key. Since we expect the offset to change on a subscribe operation, external
 nonmonotonic and skip errors are not tracked across `subscribe` operations. 
 
-### RPC: Subscribe! 
-
-Informs the server that this client wishes to receive messages from the
-given set of keys. The server should remember this mapping, and on subsequent
-polls, return messages from those keys. 
-
-Request:
-
-```clj
-{:type (eq "subscribe"), :keys [Any], :msg_id Int}
-```
-
-Response:
-
-```clj
-{:type (eq "subscribe_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
-```
-
-
 ### RPC: Send! 
 
 Sends a single message to a specific key. The server should assign a unique
@@ -319,6 +298,27 @@ Response:
 ```clj
 {:type (eq "send_ok"),
  :offset Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Subscribe! 
+
+Informs the server that this client wishes to receive messages from the
+given set of keys. The server should remember this mapping, and on subsequent
+polls, return messages from those keys. 
+
+Request:
+
+```clj
+{:type (eq "subscribe"), :keys [Any], :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "subscribe_ok"),
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
@@ -344,6 +344,36 @@ Response:
  {Any
   [[#schema.core.One{:schema Int, :optional? false, :name "offset"}
     #schema.core.One{:schema Any, :optional? false, :name "msg"}]]},
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Commit_offsets! 
+
+Informs the server that the client has successfully processed messages up to
+and including the given offset. For instance, if a client sends:
+
+```edn
+{:type "commit_offsets"
+:offsets {"k1" 2}}
+```
+
+This means that on key `k1` offsets 0, 1, and 2 (if they exist; offsets may
+be sparse) have been processed, but offsets 3 and higher have not. To avoid
+lost writes, the servers should ensure that any fresh subscription to key
+`k1` starts at offset 3 (or lower). 
+
+Request:
+
+```clj
+{:type (eq "commit_offsets"), :offsets {Any Int}, :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "commit_offsets_ok"),
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
