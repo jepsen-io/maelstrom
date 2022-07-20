@@ -230,19 +230,22 @@ Response:
 ## Workload: Kafka 
 
 A simplified version of a Kafka-style stream processing system. Servers
-provide a set of append-only logs identified by *keys*. Each integer *offset*
-in a log has one *message*. Offsets may be sparse: not every offset
+provide a set of append-only logs identified by string *keys*. Each integer
+*offset* in a log has one *message*. Offsets may be sparse: not every offset
 must contain a message.
 
 A client appends a message to a log by making a `send` RPC request with the
 keyn and value they want to append; the server responds with the offset it
 assigned for that particular message.
 
-To read a log, a client issues a `subscribe` RPC request with a set of keys
+To read a log, a client issues an `assign` RPC request with a set of keys
 it wants to receive messages from; the server is responsible for tracking
-that this particular client has subscribed to those keys.
+that this particular client has assigned those keys. Note that this is a
+hybrid of Kafka's `assign` and `subscribe`: it makes the server responsible
+for tracking polling offsets, but does not have any concept of consumer
+groups.
 
-After having subscribed, the client can issue a `poll` request. In response,
+After having assigned, the client can issue a `poll` request. In response,
 the server sends a `poll_ok` RPC response, containing a map of keys to
 sequences of messages. We'll talk about exactly *which* messages in a moment.
 
@@ -275,11 +278,11 @@ nonmonotonic errors, a skip error can be internal (in a single transaction or
 poll) or external (between two transactions).
 
 In order to prevent these anomalies, each server should track each client's
-offsets for each key. When a client issues a *subscribe* operation which
-subscribes to a new key, the client's offset for that key can change
+offsets for each key. When a client issues an `assign` operation which
+assigns a new key, the client's offset for that key can change
 arbitrarily--most likely, it should be set to the committed offset for that
-key. Since we expect the offset to change on a subscribe operation, external
-nonmonotonic and skip errors are not tracked across `subscribe` operations. 
+key. Since we expect the offset to change on assign, external nonmonotonic
+and skip errors are not tracked across `assign` operations. 
 
 ### RPC: Send! 
 
@@ -290,20 +293,23 @@ offest.
 Request:
 
 ```clj
-{:type (eq "send"), :key Any, :msg Any, :msg_id Int}
+{:type (eq "send"),
+ :key (named Str "key"),
+ :msg (named Any "msg"),
+ :msg_id Int}
 ```
 
 Response:
 
 ```clj
 {:type (eq "send_ok"),
- :offset Int,
+ :offset (named Int "offset"),
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
 
-### RPC: Subscribe! 
+### RPC: Assign! 
 
 Informs the server that this client wishes to receive messages from the
 given set of keys. The server should remember this mapping, and on subsequent
@@ -312,13 +318,13 @@ polls, return messages from those keys.
 Request:
 
 ```clj
-{:type (eq "subscribe"), :keys [Any], :msg_id Int}
+{:type (eq "assign"), :keys [(named Str "key")], :msg_id Int}
 ```
 
 Response:
 
 ```clj
-{:type (eq "subscribe_ok"),
+{:type (eq "assign_ok"),
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
@@ -327,8 +333,15 @@ Response:
 ### RPC: Poll! 
 
 Requests some messages from whatever topics the client has currently
-subscribed to. The server should respond with a `poll_ok` response,
-containing a map of keys to vectors of [offest, message] pairs. 
+assigned. The server should respond with a `poll_ok` response,
+containing a logical map of keys to vectors of [offest, message] pairs.
+Because JSON maps can only encode string keys, we encode this as a vector of
+[k msgs] pairs, like so:
+
+```json
+{"type": "poll_ok"
+"msgs": [[k1 [msg1 msg2]] [k2 [msg3]] ...]}
+``` 
 
 Request:
 
@@ -341,9 +354,13 @@ Response:
 ```clj
 {:type (eq "poll_ok"),
  :msgs
- {Any
-  [[#schema.core.One{:schema Int, :optional? false, :name "offset"}
-    #schema.core.One{:schema Any, :optional? false, :name "msg"}]]},
+ {(named Str "key")
+  [[#schema.core.One{:schema (named Int "offset"),
+                     :optional? false,
+                     :name "offset"}
+    #schema.core.One{:schema (named Any "msg"),
+                     :optional? false,
+                     :name "msg"}]]},
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
@@ -361,13 +378,15 @@ and including the given offset. For instance, if a client sends:
 
 This means that on key `k1` offsets 0, 1, and 2 (if they exist; offsets may
 be sparse) have been processed, but offsets 3 and higher have not. To avoid
-lost writes, the servers should ensure that any fresh subscription to key
-`k1` starts at offset 3 (or lower). 
+lost writes, the servers should ensure that any fresh assign of key `k1`
+starts at offset 3 (or lower). 
 
 Request:
 
 ```clj
-{:type (eq "commit_offsets"), :offsets {Any Int}, :msg_id Int}
+{:type (eq "commit_offsets"),
+ :offsets {(named Str "key") (named Int "offset")},
+ :msg_id Int}
 ```
 
 Response:

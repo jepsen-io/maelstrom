@@ -10,7 +10,10 @@
 
   To read a log, a client issues an `assign` RPC request with a set of keys
   it wants to receive messages from; the server is responsible for tracking
-  that this particular client has assigned those keys.
+  that this particular client has assigned those keys. Note that this is a
+  hybrid of Kafka's `assign` and `subscribe`: it makes the server responsible
+  for tracking polling offsets, but does not have any concept of consumer
+  groups.
 
   After having assigned, the client can issue a `poll` request. In response,
   the server sends a `poll_ok` RPC response, containing a map of keys to
