@@ -26,3 +26,15 @@
                     [0 type (Long/parseLong num)]
                     ; Sort special (services) nodes last
                     [1 client 0])))))
+
+(defn map->pairs
+  "Encodes a map {k v, k2 v2} as KV pairs [[k v] [k2 v2]], for JSON
+  serialization."
+  [m]
+  (seq m))
+
+(defn pairs->map
+  "Decodes a sequence of kv pairs [[k v] [k2 v2]] to a map {k v, k2 v2}, for
+  JSON deserialization."
+  [pairs]
+  (into {} pairs))

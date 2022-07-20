@@ -26,6 +26,7 @@
                     [store :as store]
                     [tests :as tests]
                     [util :as util :refer [timeout parse-long]]]
+            [jepsen.tests.kafka :as jepsen.kafka]
             [jepsen.checker.timeline :as timeline]))
 
 (def workloads
@@ -73,7 +74,7 @@
                     generator)]
     (merge tests/noop-test
            opts
-           workload
+           (dissoc workload :final-generator)
            {:name    (str (name workload-name))
             :nodes   nodes
             :ssh     {:dummy? true}
@@ -86,7 +87,8 @@
                                       {:nemeses (:perf nemesis-package)})
                         :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
-                        :stats      (checker/stats)
+                        :stats      (-> (checker/stats)
+                                        jepsen.kafka/stats-checker)
                         :net        (net.checker/checker)
                         :workload   (:checker workload)})
             :generator generator
