@@ -88,8 +88,7 @@
 
 (def PollRes
   "The response to a poll operation has a (logical) map of keys to vectors of
-  [offset message] pairs. Because maps in JSON only have string keys, we encode
-  this as a vector of [k v] pairs."
+  [offset message] pairs."
   [(s/one (s/eq "poll") "f")
    (s/one {Key [OffsetMessage]} "msgs")])
 
@@ -114,14 +113,7 @@
 (c/defrpc poll!
   "Requests some messages from whatever topics the client has currently
   assigned. The server should respond with a `poll_ok` response,
-  containing a logical map of keys to vectors of [offest, message] pairs.
-  Because JSON maps can only encode string keys, we encode this as a vector of
-  [k msgs] pairs, like so:
-
-  ```json
-  {\"type\": \"poll_ok\"
-   \"msgs\": [[k1 [msg1 msg2]] [k2 [msg3]] ...]}
-  ```"
+  containing a map of keys to vectors of [offest, message] pairs."
   {:type (s/eq "poll")}
   {:type (s/eq "poll_ok")
    :msgs {Key [OffsetMessage]}})
@@ -131,7 +123,7 @@
   and including the given offset. For instance, if a client sends:
 
   ```edn
-  {:type \"commit_offsets\"
+  {:type    \"commit_offsets\"
    :offsets {\"k1\" 2}}
   ```
 

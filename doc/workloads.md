@@ -334,14 +334,7 @@ Response:
 
 Requests some messages from whatever topics the client has currently
 assigned. The server should respond with a `poll_ok` response,
-containing a logical map of keys to vectors of [offest, message] pairs.
-Because JSON maps can only encode string keys, we encode this as a vector of
-[k msgs] pairs, like so:
-
-```json
-{"type": "poll_ok"
-"msgs": [[k1 [msg1 msg2]] [k2 [msg3]] ...]}
-``` 
+containing a map of keys to vectors of [offest, message] pairs. 
 
 Request:
 
@@ -372,7 +365,7 @@ Informs the server that the client has successfully processed messages up to
 and including the given offset. For instance, if a client sends:
 
 ```edn
-{:type "commit_offsets"
+{:type    "commit_offsets"
 :offsets {"k1" 2}}
 ```
 
