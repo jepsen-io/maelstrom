@@ -96,8 +96,8 @@
   (log "I am node" @node-id)
   (reply! req {:type :init_ok}))
 
-(declare handle-assign!)
 (declare handle-commit-offsets!)
+(declare handle-list-committed-offsets!)
 (declare handle-poll!)
 (declare handle-send!)
 
@@ -106,8 +106,8 @@
   [{:keys [body] :as req}]
   (case (:type body)
     "init"           (handle-init! req)
-    "assign"         (handle-assign! req)
     "commit_offsets" (handle-commit-offsets! req)
+    "list_committed_offsets" (handle-list-committed-offsets! req)
     "poll"           (handle-poll! req)
     "send"           (handle-send! req)
     (throw (ex-info (str "Unknown request type " (:type body))
@@ -152,61 +152,44 @@
   messages."
   (atom {}))
 
-(def client-offsets
-  "An atom storing a map of client-node-id -> key -> offset, where offset is
-  the next offset in that key which that client will receive. The keys for a
-  client tell us which queues the client is interested in."
+(def committed-offsets
+  "An atom storing a map of key -> committed-offset, where a committed offset is the latest known-processed offset for that key."
   (atom {}))
 
-(defn handle-assign!
-  "Handles an assign request, binding a client to a set of keys."
-  [{:keys [src body] :as req}]
-  (let [client src]
-    (swap! client-offsets
-           (fn [client-offsets]
-             (let [offsets (get client-offsets src)
-                   offsets' (->> (:keys body)
-                                 (map (fn [k]
-                                        [k (get offsets k 0)]))
-                                 (into (sorted-map)))]
-               (assoc client-offsets client offsets'))))
-    (log "New offsets" @client-offsets)
-    (reply! req {:type "assign_ok"})))
-
 (defn handle-commit-offsets!
-  "Handles a commit_offsets request by advancing the offsets for a client to
-  just past the given offsets."
+  "Handles a commit_offsets request by advancing the committed offsets for a
+  key to just past the given offsets."
   [{:keys [src body] :as req}]
-  (let [client      src
-        new-offsets (-> body :offsets (update-vals inc))]
-    (swap! client-offsets
-           (fn [client-offsets]
-             (let [offsets  (get client-offsets client)
-                   offsets' (merge-with max offsets new-offsets)]
-               (assoc client-offsets client offsets'))))
-    (log "New offsets" (pr-str @client-offsets))
-    (reply! req {:type "commit_offsets_ok"})))
+  (swap! committed-offsets (partial merge-with max) (:offsets body))
+  (log "New offsets" (pr-str @committed-offsets))
+  (reply! req {:type "commit_offsets_ok"}))
+
+(defn handle-list-committed-offsets!
+  "Handles a request for committed offsets by fetching the given keys from the
+  committed offsets map."
+  [{:keys [body] :as req}]
+  (reply! req {:type "list_committed_offsets_ok"
+               :offsets (select-keys @committed-offsets (:keys body))}))
 
 (defn handle-poll!
-  "Handles a poll RPC request by finding some messages the client is assigned
-  to but hasn't seen yet, and sending those back. Advances offsets."
-  [{:keys [src body] :as req}]
-  (let [client  src
-        ; Get the offsets this client currently has
-        offsets (get @client-offsets client)
+  "Handles a poll RPC request by fetching messages from queues, starting at the
+  given offsets."
+  [{:keys [body] :as req}]
+  (let [offsets (:offsets body)
         ; And the current state of the queues
         queues @queues
         ; What messages can we deliver?
-        _ (log "Client offsets are" (pr-str offsets))
+        _ (log "Requested offsets are" (pr-str offsets))
         msgs   (->> offsets
-                    (map (fn [[k offset]]
-                           ; What's unconsumed for this key?
-                           (let [queue   (get queues k [])
-                                 offset  (min offset (count queue))
-                                 msgs    (subvec queue offset)
-                                 offsets (iterate inc offset)]
-                             (log "key" k "queue" queue "offset" offset "msgs" msgs)
-                             [k (map vector offsets msgs)])))
+                    (keep (fn [[k offset]]
+                            ; What's unconsumed for this key?
+                            (let [queue   (get queues k [])
+                                  offset  (min offset (count queue))
+                                  msgs    (subvec queue offset)
+                                  offsets (iterate inc offset)]
+                              ;(when (seq msgs)
+                                (log "key" k "queue" queue "offset" offset "msgs" msgs)
+                                [k (map vector offsets msgs)])))
                     (into (sorted-map)))]
     (reply! req {:type "poll_ok"
                  :msgs msgs})))

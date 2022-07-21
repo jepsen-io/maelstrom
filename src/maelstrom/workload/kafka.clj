@@ -15,6 +15,14 @@
   for tracking polling offsets, but does not have any concept of consumer
   groups.
 
+  When a client assigns a key which it is not currently assigned, the server is
+  free to pick an arbitary offset for that client and that key. Calls to `poll`
+  return records beginning at that offset. Each call to `assign` replaces the
+  set of keys the client is assigned to. Offsets for keys the client is
+  currently assigned to should be preserved. When a client is no longer
+  assigned to a key, it is free to forget the offset and pick a fresh one if it
+  is reassigned.
+
   After having assigned, the client can issue a `poll` request. In response,
   the server sends a `poll_ok` RPC response, containing a map of keys to
   sequences of messages. We'll talk about exactly *which* messages in a moment.
@@ -70,28 +78,6 @@
   "We frequently deal with [offset message] pairs."
   [(s/one Offset "offset") (s/one Message "msg")])
 
-(def SendReq
-  "When we send a message to a log, we write [\"send\" key value]."
-  [(s/one (s/eq "send") "f") (s/one Key "k") (s/one Message "msg")])
-
-(def SendRes
-  "When we receive a response to a send operation, it should include the offset
-  that that message was assigned, as an offset-message pair."
-  [(s/one (s/eq "send") "f")
-   (s/one Key "k")
-   (s/one OffsetMessage "offset-msg")])
-
-(def PollReq
-  "When we make a txn request containing a poll operation, it's just
-  [\"poll\"]."
-  [(s/one (s/eq "poll") "f")])
-
-(def PollRes
-  "The response to a poll operation has a (logical) map of keys to vectors of
-  [offset message] pairs."
-  [(s/one (s/eq "poll") "f")
-   (s/one {Key [OffsetMessage]} "msgs")])
-
 (c/defrpc send!
   "Sends a single message to a specific key. The server should assign a unique
   offset in the key for this message, and return a `send_ok` response with that
@@ -102,19 +88,29 @@
   {:type   (s/eq "send_ok")
    :offset Offset})
 
-(c/defrpc assign!
-  "Informs the server that this client wishes to receive messages from the
-  given set of keys. The server should remember this mapping, and on subsequent
-  polls, return messages from those keys."
-  {:type (s/eq "assign")
-   :keys [Key]}
-  {:type (s/eq "assign_ok")})
+(c/defrpc poll
+  "Requests messages from specific keys. The client provides a map `offsets`,
+  whose keys are the keys of distinct queues, and whose values are the
+  corresponding offsets the server should send back first (if available). For
+  instance, a client might request
 
-(c/defrpc poll!
-  "Requests some messages from whatever topics the client has currently
-  assigned. The server should respond with a `poll_ok` response,
-  containing a map of keys to vectors of [offest, message] pairs."
-  {:type (s/eq "poll")}
+      {\"type\": \"poll\",
+       \"offsets\": {\"a\": 2}}
+
+  This means that the client would like to see messages from key \"a\"
+  beginning with offset 2. The server is free to respond with any number of
+  contiguous messages from queue \"a\" so long as the first message's offset is
+  2. Those messages are returned as a map of keys to arrays of [offset message]
+  pairs. For example:
+
+      {\"type\": \"poll_ok\",
+       \"msgs\": {\"a\": [[2 9] [3 5] [4 15]]}}
+
+  In queue \"a\", offset 2 has message 9, offset 3 has message 5, and offset 4
+  has message 15. If no messages are available for a key, the server can omit
+  that key from the response map altogether."
+  {:type (s/eq "poll")
+   :offsets {Key Offset}}
   {:type (s/eq "poll_ok")
    :msgs {Key [OffsetMessage]}})
 
@@ -135,51 +131,80 @@
    :offsets {Key Offset}}
   {:type    (s/eq "commit_offsets_ok")})
 
+(c/defrpc list_committed_offsets
+  "Requests the latest committed offsets for the given array of keys. The
+  server should respond with a map of keys to offsets. If a key does not exist,
+  it can be omitted from the response map. Clients use this to figure out where
+  to start consuming from a given key."
+  {:type (s/eq "list_committed_offsets")
+   :keys [Key]}
+  {:type (s/eq "list_committed_offsets_ok")
+   :offsets {Key Offset}})
+
+(defn txn-offsets
+  "Computes the highest polled offsets in a transaction, returning a map of
+  keys to offsets."
+  [txn]
+  (loopr [offsets {}]
+         [[_ keys->msgs]  (filter (comp #{:poll} first) txn)
+          [k pairs]       keys->msgs
+          [offset msg]    pairs]
+         (recur (assoc offsets k (max (get offsets k 0) offset)))))
+
 (defn apply-mop!
   "Takes a micro-op from a transaction--e.g. [:poll] or [:send k msg]--and
-  applies it to the given connection, returning a completed micro-op."
-  [conn node [f :as mop]]
+  applies it to the given connection, returning a completed micro-op. Advances
+  local offsets with each poll."
+  [conn node offsets [f :as mop]]
   (case f
-    :poll (let [msgs (-> (poll! conn node {})
-                         :msgs)]
-                [:poll msgs])
+    :poll (let [_    (info "Polling" @offsets)
+                msgs (-> (poll conn node {:offsets @offsets})
+                         :msgs)
+                ; Advance local poll offsets
+                new-offsets (update-vals msgs
+                                         (fn [pairs]
+                                           (->> pairs
+                                                (map first)
+                                                (reduce max -1)
+                                                inc)))]
+            (swap! offsets (partial merge-with max) new-offsets)
+            [:poll msgs])
 
     :send (let [[_ k msg] mop
                 offset    (:offset (send! conn node {:key k, :msg msg}))]
             [:send k [offset msg]])))
 
-(defn commit-txn-offsets!
-  "Takes a completed transaction and commits any polled offsets in it."
-  [conn node txn]
-  (loopr [offsets {}]
-         [[_ keys->msgs]  (filter (comp #{:poll} first) txn)
-          [k pairs]       keys->msgs
-          [offset msg]    pairs]
-         (recur (assoc offsets k (max (get offsets k 0) offset)))
-         (when (seq offsets)
-           (info "Committing offsets" offsets)
-           (commit_offsets! conn node {:offsets offsets}))))
-
-(defrecord Client [net conn node]
+; Offsets is an atom with a map of assigned keys to the offset we want to read
+; next.
+(defrecord Client [net conn node offsets]
   client/Client
   (open! [this test node]
     (assoc this
            :conn (c/open! net)
-           :node node))
+           :node node
+           :offsets (atom {})))
 
   (setup! [_ test])
 
   (invoke! [_ test {:keys [f value] :as op}]
     (case f
-      :assign (do (assign! conn node {:keys value})
+      :assign (do (swap! offsets (fn [offsets]
+                                   (->> value
+                                        (map (fn [k]
+                                               [k (get offsets k 0)]))
+                                        (into {}))))
                   (assoc op :type :ok))
 
       :crash (assoc op :type :info)
 
       (:poll, :send) (do (assert (= 1 (count value)))
-                         (let [mop' (apply-mop! conn node (first value))
-                               txn' [mop']]
-                           (commit-txn-offsets! conn node txn')
+                         (let [mop' (apply-mop! conn node offsets (first value))
+                               txn' [mop']
+                               offsets (txn-offsets txn')]
+                           (when (seq offsets)
+                             ; And commit remotely
+                             (info "Committing offsets" offsets)
+                             (commit_offsets! conn node {:offsets offsets}))
                            (assoc op :type :ok, :value txn')))))
 
   (teardown! [_ test])
@@ -235,6 +260,6 @@
                        ; so we clip this to 10 seconds.
                        (gen/time-limit 10))]
     (assoc workload
-           :client          (map->Client {:net (:net opts)})
+           :client          (map->Client {:net     (:net opts)})
            :generator       gen
            :final-generator final-gen)))
