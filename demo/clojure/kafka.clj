@@ -187,9 +187,9 @@
                                   offset  (min offset (count queue))
                                   msgs    (subvec queue offset)
                                   offsets (iterate inc offset)]
-                              ;(when (seq msgs)
+                              (when (seq msgs)
                                 (log "key" k "queue" queue "offset" offset "msgs" msgs)
-                                [k (map vector offsets msgs)])))
+                                [k (map vector offsets msgs)]))))
                     (into (sorted-map)))]
     (reply! req {:type "poll_ok"
                  :msgs msgs})))

@@ -5,35 +5,19 @@
   must contain a message.
 
   A client appends a message to a log by making a `send` RPC request with the
-  keyn and value they want to append; the server responds with the offset it
+  key and value they want to append; the server responds with the offset it
   assigned for that particular message.
 
-  To read a log, a client issues an `assign` RPC request with a set of keys
-  it wants to receive messages from; the server is responsible for tracking
-  that this particular client has assigned those keys. Note that this is a
-  hybrid of Kafka's `assign` and `subscribe`: it makes the server responsible
-  for tracking polling offsets, but does not have any concept of consumer
-  groups.
+  To read a log, a client issues a `poll` RPC request with a map of keys to the
+  offsets it wishes to read beginning at. The server returns a `poll_ok`
+  response containing a map of keys to vectors of `[offset, message]` pairs,
+  beginning at the requested offset for that key.
 
-  When a client assigns a key which it is not currently assigned, the server is
-  free to pick an arbitary offset for that client and that key. Calls to `poll`
-  return records beginning at that offset. Each call to `assign` replaces the
-  set of keys the client is assigned to. Offsets for keys the client is
-  currently assigned to should be preserved. When a client is no longer
-  assigned to a key, it is free to forget the offset and pick a fresh one if it
-  is reassigned.
-
-  After having assigned, the client can issue a `poll` request. In response,
-  the server sends a `poll_ok` RPC response, containing a map of keys to
-  sequences of messages. We'll talk about exactly *which* messages in a moment.
-
-  Since messages delivered in response to a poll might not actually be
-  *processed* if a client crashes, the client needs to inform the server that
-  messages have been successfully processed. To do this, it periodically sends
-  a *commit_offsets* RPC, containing a map of keys to the offsets it has
-  processed. Servers acknowledge this with a `commit_ok` response. The servers
-  should collectively keep track of this committed offset, and use it to
-  constrain which messages are delivered.
+  Servers should maintain a *committed offset* for each key. Clients can
+  request that this offset be advanced by making a `commit_offsets` RPC
+  request, with a map of keys to the highest offsets which that client has
+  processed. Clients can also fetch known-committed offsets for a given set of
+  keys through a `fetch_committed_offsets` request.
 
   The checker for this workload detects a number of anomalies.
 
@@ -188,11 +172,21 @@
 
   (invoke! [_ test {:keys [f value] :as op}]
     (case f
-      :assign (do (swap! offsets (fn [offsets]
-                                   (->> value
-                                        (map (fn [k]
-                                               [k (get offsets k 0)]))
-                                        (into {}))))
+      :assign (do (if (:seek-to-beginning? op)
+                    ; We want to rewind to zero on everything
+                    (reset! offsets (zipmap value (repeat 0)))
+                    ; Fetch committed offsets from storage
+                    (let [committed (list_committed_offsets
+                                      conn node
+                                      {:keys value})]
+                      (swap! offsets
+                             (fn [offsets]
+                               (->> value
+                                    (map (fn [k]
+                                           [k (or (offsets k)
+                                                  (committed k)
+                                                  0)]))
+                                    (into {}))))))
                   (assoc op :type :ok))
 
       :crash (assoc op :type :info)
