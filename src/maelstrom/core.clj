@@ -163,7 +163,7 @@
     :parse-fn parse-long
     :validate [pos? "must be positive"]]
 
-   [nil "--max-writes-per-key INT" "How many writes can we perform to any single key, for append tests?"
+   [nil "--max-writes-per-key INT" "How many writes can we perform to any single key, for append and kafka tests?"
     :default  16
     :parse-fn parse-long
     :validate [pos? "must be positive"]]

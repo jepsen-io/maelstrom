@@ -141,7 +141,7 @@
   local offsets with each poll."
   [conn node offsets [f :as mop]]
   (case f
-    :poll (let [_    (info "Polling" @offsets)
+    :poll (let [;_    (info "Polling" @offsets)
                 msgs (-> (poll conn node {:offsets @offsets})
                          :msgs)
                 ; Advance local poll offsets
@@ -197,7 +197,7 @@
                                offsets (txn-offsets txn')]
                            (when (seq offsets)
                              ; And commit remotely
-                             (info "Committing offsets" offsets)
+                             ;(info "Committing offsets" offsets)
                              (commit_offsets! conn node {:offsets offsets}))
                            (assoc op :type :ok, :value txn')))))
 
