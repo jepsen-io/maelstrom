@@ -211,26 +211,49 @@
     ; Tear down clients when we crash
     false))
 
+(defn update-op-keys
+  "Takes an operation and rewrites its poll/send/assign/subscribe keys using
+  f."
+  [op f]
+  (case (:f op)
+    (:assign, :subscribe)
+    (assoc op :value (mapv f (:value op)))
+
+    :crash op
+
+    (:poll, :send, :txn)
+    (assoc op :value (mapv (fn [[fun :as mop]]
+                             (case fun
+                               :poll (if-let [msgs (second mop)]
+                                       [:poll (update-keys msgs f)]
+                                       mop)
+                               :send (let [[_ k v] mop]
+                                       [:send (f k) v])))
+                           (:value op)))))
+
+(defrecord StringKeys [gen]
+  gen/Generator
+  (op [this test context]
+    (when-let [[op gen'] (gen/op gen test context)]
+      (if (= :pending op)
+        [:pending this]
+        ; Rewrite keys
+        [(update-op-keys op str)
+         (StringKeys. gen')])))
+
+  ; When we receive updates, we need to rewrite those keys *back* into integers
+  ; so that the key tracking does the right thing.
+  (update [this test context {:keys [f value] :as op}]
+    (let [event' (update-op-keys op parse-long)
+          gen'   (gen/update gen test context event')]
+    (StringKeys. gen'))))
+
 (defn gen-string-keys
-  "Wraps a Kafka generator, rewriting keys to strings. We do this to keep
+  "Wraps a Kafka generator, rewriting long keys to strings. We do this to keep
   users' lives simple--there's a nice JSON map type for string keys, and this
   way we don't force them to encode/decode kv array pairs."
   [gen]
-  (gen/map (fn [{:keys [f value :as] :as op}]
-             (case f
-               (:assign, :subscribe)
-               (assoc op :value (mapv str value))
-
-               :crash op
-
-               (:poll, :send, :txn)
-               (assoc op :value (mapv (fn [[f :as mop]]
-                                        (case f
-                                          :poll mop
-                                          :send (let [[f k v] mop]
-                                                  [f (str k) v])))
-                                      value))))
-           gen))
+  (StringKeys. gen))
 
 (defn workload
   "Constructs a workload for Kafka tests, given options from the CLI test
