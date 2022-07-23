@@ -25,7 +25,7 @@
                     [generator :as gen]
                     [store :as store]
                     [tests :as tests]
-                    [util :as util :refer [timeout parse-long]]]
+                    [util :as util :refer [timeout]]]
             [jepsen.tests.kafka :as jepsen.kafka]
             [jepsen.checker.timeline :as timeline]))
 
