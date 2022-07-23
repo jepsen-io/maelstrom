@@ -13,8 +13,8 @@
                  [cheshire "5.11.0"]
                  [byte-streams "0.2.4"]
                  ; Reductions over journals
-                 [tesser.core "1.0.4"]
-                 [tesser.math "1.0.4"]
+                 [tesser.core "1.0.5"]
+                 [tesser.math "1.0.5"]
                  ; For range sets
                  [com.google.guava/guava "30.1-jre"]
                  ; Input validation
