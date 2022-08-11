@@ -122,6 +122,24 @@ function handleInit(req) {
   console.warn("Node", nodeId, "initialized");
 };
 
+// Sends an error back to the client
+function maybeReplyError(req, err) {
+  if (body.msg_id != undefined) {
+    // We can reply
+    if (err.code != undefined) {
+      // We have an explicitly tagged error code
+      reply(req, {... err, type: 'error'});
+    } else {
+      // Reply with a generic error
+      reply(req, {
+        type: 'error',
+        code: 13,
+        text: String(err)
+      });
+    }
+  }
+}
+
 // Handle a request
 function handle(req) {
   try {
@@ -166,14 +184,20 @@ function handle(req) {
       });
     } else {
       // Good, we have a handler; invoke it with our request.
-      handler(req);
+      if (handler.constructor.name === 'AsyncFunction') {
+        // For async handlers, attach an exception handler
+        handler(req).catch((err) => {
+          console.warn("Error processing async request", req, err);
+          maybeReplyError(req, err);
+        });
+      } else {
+        // Just call it directly; it'll explode.
+        handler(req);
+      }
     }
   } catch (err) {
     console.warn("Error processing request", err);
-    if (body.msg_id != undefined && err.code != undefined) {
-      // We can reply back and inform the client of this error
-      reply(req, {... err, type: 'error'});
-    }
+    maybeReplyError(req, err);
   }
 };
 

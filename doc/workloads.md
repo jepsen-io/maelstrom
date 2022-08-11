@@ -235,27 +235,19 @@ provide a set of append-only logs identified by string *keys*. Each integer
 must contain a message.
 
 A client appends a message to a log by making a `send` RPC request with the
-keyn and value they want to append; the server responds with the offset it
+key and value they want to append; the server responds with the offset it
 assigned for that particular message.
 
-To read a log, a client issues an `assign` RPC request with a set of keys
-it wants to receive messages from; the server is responsible for tracking
-that this particular client has assigned those keys. Note that this is a
-hybrid of Kafka's `assign` and `subscribe`: it makes the server responsible
-for tracking polling offsets, but does not have any concept of consumer
-groups.
+To read a log, a client issues a `poll` RPC request with a map of keys to the
+offsets it wishes to read beginning at. The server returns a `poll_ok`
+response containing a map of keys to vectors of `[offset, message]` pairs,
+beginning at the requested offset for that key.
 
-After having assigned, the client can issue a `poll` request. In response,
-the server sends a `poll_ok` RPC response, containing a map of keys to
-sequences of messages. We'll talk about exactly *which* messages in a moment.
-
-Since messages delivered in response to a poll might not actually be
-*processed* if a client crashes, the client needs to inform the server that
-messages have been successfully processed. To do this, it periodically sends
-a *commit_offsets* RPC, containing a map of keys to the offsets it has
-processed. Servers acknowledge this with a `commit_ok` response. The servers
-should collectively keep track of this committed offset, and use it to
-constrain which messages are delivered.
+Servers should maintain a *committed offset* for each key. Clients can
+request that this offset be advanced by making a `commit_offsets` RPC
+request, with a map of keys to the highest offsets which that client has
+processed. Clients can also fetch known-committed offsets for a given set of
+keys through a `fetch_committed_offsets` request.
 
 The checker for this workload detects a number of anomalies.
 
@@ -309,37 +301,35 @@ Response:
 ```
 
 
-### RPC: Assign! 
+### RPC: Poll 
 
-Informs the server that this client wishes to receive messages from the
-given set of keys. The server should remember this mapping, and on subsequent
-polls, return messages from those keys. 
+Requests messages from specific keys. The client provides a map `offsets`,
+whose keys are the keys of distinct queues, and whose values are the
+corresponding offsets the server should send back first (if available). For
+instance, a client might request
 
-Request:
+{"type": "poll",
+"offsets": {"a": 2}}
 
-```clj
-{:type (eq "assign"), :keys [(named Str "key")], :msg_id Int}
-```
+This means that the client would like to see messages from key "a"
+beginning with offset 2. The server is free to respond with any number of
+contiguous messages from queue "a" so long as the first message's offset is
+2. Those messages are returned as a map of keys to arrays of [offset message]
+pairs. For example:
 
-Response:
+{"type": "poll_ok",
+"msgs": {"a": [[2 9] [3 5] [4 15]]}}
 
-```clj
-{:type (eq "assign_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
-```
-
-
-### RPC: Poll! 
-
-Requests some messages from whatever topics the client has currently
-assigned. The server should respond with a `poll_ok` response,
-containing a map of keys to vectors of [offest, message] pairs. 
+In queue "a", offset 2 has message 9, offset 3 has message 5, and offset 4
+has message 15. If no messages are available for a key, the server can omit
+that key from the response map altogether. 
 
 Request:
 
 ```clj
-{:type (eq "poll"), :msg_id Int}
+{:type (eq "poll"),
+ :offsets {(named Str "key") (named Int "offset")},
+ :msg_id Int}
 ```
 
 Response:
@@ -386,6 +376,31 @@ Response:
 
 ```clj
 {:type (eq "commit_offsets_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: List_committed_offsets 
+
+Requests the latest committed offsets for the given array of keys. The
+server should respond with a map of keys to offsets. If a key does not exist,
+it can be omitted from the response map. Clients use this to figure out where
+to start consuming from a given key. 
+
+Request:
+
+```clj
+{:type (eq "list_committed_offsets"),
+ :keys [(named Str "key")],
+ :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "list_committed_offsets_ok"),
+ :offsets {(named Str "key") (named Int "offset")},
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
