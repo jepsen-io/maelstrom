@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# http://mywiki.wooledge.org/BashFAQ/028
+if [[ $BASH_SOURCE = */* ]]; then
+    DIR=${BASH_SOURCE%/*}/
+else
+    DIR=./
+fi
+
+java -jar "$DIR/target/lab-1.0-SNAPSHOT-jar-with-dependencies.jar"

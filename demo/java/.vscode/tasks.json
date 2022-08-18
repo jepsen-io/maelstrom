@@ -1,0 +1,18 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Test with Maelstrom",
+            "type": "shell",
+            "command": "./build && cd ../ && ./maelstrom test --bin lab/server -w echo --time-limit 5 --node-count 1",
+            "args": [],
+            "problemMatcher": [
+                "$tsc"
+            ],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": "build"
+        }
+    ]
+}
