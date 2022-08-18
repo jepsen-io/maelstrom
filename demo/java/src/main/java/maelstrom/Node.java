@@ -1,138 +1,187 @@
 package maelstrom;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.TimeZone;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.exc.StreamWriteException;
-import com.fasterxml.jackson.databind.DatabindException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.eclipsesource.json.Json;
+import com.eclipsesource.json.JsonObject;
+import com.eclipsesource.json.JsonValue;
 
 // This class provides common support functions for writing Maelstrom nodes
 public class Node {
-    // How we serialize and deserialize JSON
-    private final ObjectMapper jsonMapper = new ObjectMapper();
-
     // Our local node ID.
-    public String nodeId;
+    public String nodeId = "uninitialized";
+
     // All node IDs
-    public List<String> nodeIds;
-    // A map of request RPC types (e.g. Echo) to Consumers which should be invoked
-    // when those messages arrive.
-    public final Map<Class<? extends Body>, Consumer<? extends Message<? extends Body>>> requestHandlers = new HashMap<Class<? extends Body>, Consumer<? extends Message<? extends Body>>>();
+    public List<String> nodeIds = new ArrayList<String>();
+
+    // A map of request RPC types (e.g. "echo") to Consumer<Message>s which should
+    // be invoked when those messages arrive.
+    public final Map<String, Consumer<Message>> requestHandlers = new HashMap<String, Consumer<Message>>();
+
+    // A map of RPC request message IDs we've sent to CompletableFutures which will receive the response bodies.
+    public final Map<Long, CompletableFuture<JsonObject>> rpcs = new HashMap<Long, CompletableFuture<JsonObject>>();
+
+    // Our next message ID to generate
+    public long nextMessageId = 0;
 
     public Node() {
     }
 
     // Registers a request handler for the given type of message.
-    public Node on(Class<? extends Body> type, Consumer<? extends Message<? extends Body>> handler) {
+    public Node on(String type, Consumer<Message> handler) {
         requestHandlers.put(type, handler);
         return this;
+    }
+
+    // Generate a new message ID
+    public long newMessageId() {
+        final long id = nextMessageId;
+        nextMessageId++;
+        return id;
     }
 
     // Log a message to stderr.
     public void log(String message) {
         TimeZone tz = TimeZone.getDefault();
-        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm");
+        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
         df.setTimeZone(tz);
         System.err.println(df.format(new Date()) + " " + message);
         System.err.flush();
     }
 
+    // Sending messages //////////////////////////////////////////////////////
+
     // Send a message to stdout
-    public void send(final Message<Body> message) {
-        try {
-            String text = jsonMapper.writeValueAsString(message);
-            log("Sending " + text);
-            System.out.println(text);
-            System.out.flush();
-        } catch (StreamWriteException e) {
-            log("Error writing to STDOUT");
-            e.printStackTrace();
-            System.exit(2);
-        } catch (DatabindException e) {
-            log("Databind error:");
-            e.printStackTrace();
-            System.exit(2);
-        } catch (IOException e) {
-            log("IO error:");
-            e.printStackTrace();
-            System.exit(2);
-        }
+    public void send(final Message message) {
+        log("Sending  " + message.toJson());
+        System.out.println(message.toJson());
+        System.out.flush();
     }
 
-    // Reply to a specific request message with a response Body.
-    public void reply(Message<? extends Body> request, Body body) {
-        send(new Message<Body>(nodeId, request.src, body));
+    // Send a message to a specific node. Automatically assigns a message ID if one
+    // is not set.
+    public void send(String dest, JsonObject body) {
+        if (body.getLong("msg_id", -1) == -1) {
+            body = Json.object().merge(body).set("msg_id", newMessageId());
+        }
+        send(new Message(nodeId, dest, body));
     }
+
+    // Send an RPC request to another node. Returns a CompletableFuture which will be delivered the response body when it arrives.
+    public CompletableFuture<JsonObject> rpc(String dest, JsonObject request) {
+        final CompletableFuture<JsonObject> f = new CompletableFuture<JsonObject>();
+        final long id = newMessageId();
+        rpcs.put(id, f);
+        send(dest, Json.object().merge(request).set("msg_id", id));
+        return f;
+    }
+
+    // Reply to a specific request message with a JsonObject body.
+    public void reply(Message request, JsonObject body) {
+        final Long msg_id = request.body.getLong("msg_id", -1);
+        final JsonObject body2 = Json.object().merge(body).set("in_reply_to", msg_id);
+        send(new Message(nodeId, request.src, body2));
+    }
+
+    // Reply to a message with a Json-coercable object as the body.
+    public void reply(Message request, IJson body) {
+        reply(request, body.toJson().asObject());
+    }
+
+
+    // Handlers ////////////////////////////////////////////////////////////
 
     // Handle an init message, setting up our state.
-    public void handleInit(final Message<Init> request) {
-        this.nodeId = request.body.node_id;
-        this.nodeIds = request.body.node_ids;
+    public void handleInit(Message request) {
+        this.nodeId = request.body.getString("node_id", null);
+        for (JsonValue id : request.body.get("node_ids").asArray()) {
+            this.nodeIds.add(id.asString());
+        }
+        log("I am " + nodeId);
     }
 
+    // Handle a reply to an RPC request we issued.
+    public void handleReply(Message reply) {
+        final JsonObject body = reply.body;
+        final long in_reply_to = body.getLong("in_reply_to", -1);
+        final CompletableFuture<JsonObject> f = rpcs.get(in_reply_to);
+        if (f == null) {
+            // Handler already triggered?
+            return;
+        }
+        rpcs.remove(in_reply_to);
+        if (body.getString("type", null).equals("error")) {
+            // If we have an error, deliver an exception
+            final long code = body.getLong("code", -1);
+            final String text = body.getString("text", null);
+            f.completeExceptionally(new Error(code, text));
+        } else {
+            // Normal completion
+            f.complete(body);
+        }
+    }
+    
     // Handle a message by looking up a request handler by the type of the message's
     // body, and calling it with the message.
-    public void handleRequest(Message<? extends Body> request) {
-        final Body body = request.body;
-        final Class<? extends Body> type = body.getClass();
-        // You and I both know that this request handler takes e.g. Message<Echo>, and
-        // that our message is also a Message<Echo>, but because of the dynamic nature
-        // of the requestHandlers map and Java's covariance/contravariance rules, I
-        // can't figure out how to convince the type system of this statically. Maybe
-        // someone clever could figure this out!
-        @SuppressWarnings("unchecked")
-        Consumer<Message<? extends Body>> handler = (Consumer<Message<? extends Body>>) requestHandlers.get(type);
+    public void handleRequest(Message request) {
+        final String type = request.body.getString("type", null);
+        Consumer<Message> handler = requestHandlers.get(type);
         if (handler == null) {
             // You don't have to register a custom Init handler.
-            if (body instanceof Init) {
+            if (type.equals("init")) {
                 return;
             }
-            Error.notSupported(body, "Don't know how to handle a request of type " + type.getName());
+            throw Error.notSupported("Don't know how to handle a request of type " + type);
         }
         handler.accept(request);
     }
 
     // Handles a parsed message from STDIN
-    @SuppressWarnings("unchecked")
-    public void handleMessage(Message<? extends Body> message) {
-        final Body body = message.body;
-        log("Handling message " + message);
+    public void handleMessage(Message message) {
+        final JsonObject body = message.body;
+        final String type = body.getString("type", null);
+        final long in_reply_to = body.getLong("in_reply_to", -1);
+        log("Handling " + message);
 
         try {
             // Init messages are special: we always handle them ourselves in addition to
             // invoking any registered callback.
-            if (body instanceof Init) {
-                handleInit((Message<Init>) message);
+            if (type.equals("init")) {
+                handleInit(message);
                 handleRequest(message);
-                reply(message, new InitOk((Init) message.body));
+                reply(message, Json.object().add("type", "init_ok"));
+            } else if (in_reply_to != -1) {
+                // A reply to an RPC we issued.
+                handleReply(message);
             } else {
-                handleRequest(message);
+                // Dispatch based on message type.
+                handleRequest(message);    
             }
-        } catch (ThrowableError e) {
+        } catch (Error e) {
             // Send a message back to the client
-            log(e.error.toString());
-            reply(message, e.error);
+            log(e.toString());
+            reply(message, e);
         } catch (Exception e) {
             // Send a generic crash error
             StringWriter sw = new StringWriter();
             PrintWriter pw = new PrintWriter(sw);
             e.printStackTrace(pw);
             String text = "Unexpected exception handling " +
-            message + ": " + e + "\n" + sw;
+                    message + ": " + e + "\n" + sw;
             log(text);
-            reply(message, new Error(message.body, 13, text));
+            reply(message, Error.crash(text));
         }
     }
 
@@ -141,21 +190,17 @@ public class Node {
     public void main() {
         final Scanner scanner = new Scanner(System.in);
         String line;
+        Message message;
         try {
             while (true) {
                 line = scanner.nextLine();
-                try {
-                    // jsonMapper.readValue is going to return an unparameterized Message type
-                    @SuppressWarnings("unchecked")
-                    Message<? extends Body> message = ((Message<? extends Body>) jsonMapper.readValue(line,
-                            Message.class));
-                    handleMessage(message);
-                } catch (JsonProcessingException e) {
-                    log("Exception parsing JSON " + line);
-                    e.printStackTrace();
-                    System.exit(1);
-                }
+                message = new Message(Json.parse(line).asObject());
+                handleMessage(message);
             }
+        } catch (Throwable e) {
+            log("Fatal error!" + e);
+            e.printStackTrace();
+            System.exit(1);
         } finally {
             scanner.close();
         }

@@ -1,40 +1,58 @@
 package maelstrom;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonTypeName;
+import com.eclipsesource.json.Json;
+import com.eclipsesource.json.JsonValue;
 
-// The body of a Maelstrom error message
-@JsonTypeName("error")
-public class Error extends Reply {
+// The body of a Maelstrom error message, as a throwable exception.
+public class Error extends RuntimeException implements IJson {
     public final long code;
     public final String text;
 
-    @JsonCreator
-    public Error(
-        @JsonProperty("in_reply_to") long in_reply_to,
-        @JsonProperty("code") long code,
-        @JsonProperty("text") String text) {
-        super(in_reply_to);
+    public Error(long code, String text) {
         this.code = code;
         this.text = text;
     }
 
-    // Helper for constructing an error in reply to a specific request body.
-    public Error(Body request, long code, String text) {
-        this(request.msg_id, code, text);
+    // Utility functions to construct specific kinds of errors, following https://github.com/jepsen-io/maelstrom/blob/main/doc/protocol.md#errors
+    public static Error timeout(String text) {
+        return new Error(0, text);
+    }
+    public static Error notSupported(String text) {
+        return new Error(10, text);
+    }
+    public static Error temporarilyUnavailable(String text) {
+        return new Error(11, text);
+    }
+    public static Error malformedRequest(String text) {
+        return new Error(12, text);
+    }
+    public static Error crash(String text) {
+        return new Error(13, text);
+    }
+    public static Error abort(String text) {
+        return new Error(14, text);
+    }
+    public static Error keyDoesNotExist(String text) {
+        return new Error(20, text);
+    }
+    public static Error keyAlreadyExists(String text) {
+        return new Error(21, text);
+    }
+    public static Error preconditionFailed(String text) {
+        return new Error(22, text);
+    }
+    public static Error txnConflict(String text) {
+        return new Error(30, text);
     }
 
-    // And utility functions to throw specific kinds of errors, following https://github.com/jepsen-io/maelstrom/blob/main/doc/protocol.md#errors
-    public static void notSupported(Body request, String text) {
-        throw new ThrowableError(new Error(request, 10, text));
+    public JsonValue toJson() {
+        return Json.object()
+        .add("type", "error")
+        .add("code", code)
+        .add("text", text);
     }
-    public static void crash(Body request, String text) {
-        throw new ThrowableError(new Error(request, 13, text));
-    }
-    
 
     public String toString() {
-        return "(error " + msg_id + " reply to " + in_reply_to + " code " + code + " " + text + ")";
+        return toJson().toString();
     }
 }

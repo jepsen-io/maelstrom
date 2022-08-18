@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Test with Maelstrom",
+            "label": "Maelstrom echo test",
             "type": "shell",
             "command": "./build && cd ../ && ./maelstrom test --bin lab/server -w echo --time-limit 5 --node-count 1",
             "args": [],
@@ -12,7 +12,26 @@
             "presentation": {
                 "reveal": "always"
             },
-            "group": "build"
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Maelstrom broadcast test",
+            "type": "shell",
+            "command": "./build && cd ../ && ./maelstrom test --bin lab/server -w broadcast --time-limit 10 --node-count 5",
+            "args": [],
+            "problemMatcher": [
+                "$tsc"
+            ],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         }
     ]
 }

@@ -7,4 +7,4 @@ else
     DIR=./
 fi
 
-java -jar "$DIR/target/lab-1.0-SNAPSHOT-jar-with-dependencies.jar"
+java -Xmx256M -jar "$DIR/target/lab-1.0-SNAPSHOT-jar-with-dependencies.jar"
