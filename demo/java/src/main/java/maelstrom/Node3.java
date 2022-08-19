@@ -18,8 +18,8 @@ import com.eclipsesource.json.Json;
 import com.eclipsesource.json.JsonObject;
 import com.eclipsesource.json.JsonValue;
 
-// This class provides common support functions for writing Maelstrom nodes
-public class Node {
+// This class provides common support functions for writing Maelstrom nodes. It includes an asynchronous RPC facility.
+public class Node3 {
     // Our local node ID.
     public String nodeId = "uninitialized";
 
@@ -36,11 +36,11 @@ public class Node {
     // Our next message ID to generate
     public long nextMessageId = 0;
 
-    public Node() {
+    public Node3() {
     }
 
     // Registers a request handler for the given type of message.
-    public Node on(String type, Consumer<Message> handler) {
+    public Node3 on(String type, Consumer<Message> handler) {
         requestHandlers.put(type, handler);
         return this;
     }
@@ -92,7 +92,7 @@ public class Node {
     public void reply(Message request, JsonObject body) {
         final Long msg_id = request.body.getLong("msg_id", -1);
         final JsonObject body2 = Json.object().merge(body).set("in_reply_to", msg_id);
-        send(new Message(nodeId, request.src, body2));
+        send(request.src, body2);
     }
 
     // Reply to a message with a Json-coercable object as the body.
@@ -198,7 +198,7 @@ public class Node {
                 handleMessage(message);
             }
         } catch (Throwable e) {
-            log("Fatal error!" + e);
+            log("Fatal error! " + e);
             e.printStackTrace();
             System.exit(1);
         } finally {

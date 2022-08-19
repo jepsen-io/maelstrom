@@ -12,24 +12,24 @@ import com.eclipsesource.json.JsonObject;
 import com.eclipsesource.json.JsonValue;
 
 import maelstrom.JsonUtil;
-import maelstrom.Node;
+import maelstrom.Node3;
 
 public class BroadcastServer {
-    public final Node node = new Node();
+    public final Node3 node = new Node3();
     // The nodes we're directly adjacent to
     public List<String> neighbors = new ArrayList<String>();
     // All messages we know about
     public Set<Long> messages = new HashSet<Long>();
 
-    // Sends a message to a neighbor and keeps retrying
+    // Sends a message to a neighbor and keep retrying if it times out or fails
     public void broadcastToNeighbor(String neighbor, JsonObject message) {
         node.rpc(neighbor, message)
-        .orTimeout(1000, TimeUnit.MILLISECONDS)
-        .exceptionally((t) -> {
-            node.log("Retrying broadcast of " + message + " to " + neighbor);
-            broadcastToNeighbor(neighbor, message);
-            return null;
-        });
+                .orTimeout(1000, TimeUnit.MILLISECONDS)
+                .exceptionally((t) -> {
+                    node.log("Retrying broadcast of " + message + " to " + neighbor);
+                    broadcastToNeighbor(neighbor, message);
+                    return null;
+                });
     }
 
     public void run() {
