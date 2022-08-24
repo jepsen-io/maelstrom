@@ -3,8 +3,8 @@
 /checkouts
 /class
 store/
-pom.xml
-pom.xml.asc
+/pom.xml
+/pom.xml.asc
 *.log
 .*.swp
 ~.*
