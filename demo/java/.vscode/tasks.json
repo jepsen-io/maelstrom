@@ -14,7 +14,7 @@
             },
             "group": {
                 "kind": "build",
-                "isDefault": true
+                "isDefault": false
             }
         },
         {
@@ -32,6 +32,22 @@
                 "kind": "build",
                 "isDefault": false
             }
-        }
+        },
+        {
+          "label": "Maelstrom txn-list-append test",
+          "type": "shell",
+          "command": "./build && cd ../../ && ./maelstrom test --bin demo/java/server -w txn-list-append --time-limit 10 --node-count 2 --rate 100",
+          "args": [],
+          "problemMatcher": [
+              "$tsc"
+          ],
+          "presentation": {
+              "reveal": "always"
+          },
+          "group": {
+              "kind": "build",
+              "isDefault": true
+          }
+      }
     ]
 }

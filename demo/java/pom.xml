@@ -18,6 +18,12 @@
 
   <dependencies>
     <dependency>
+      <groupId>io.lacuna</groupId>
+      <artifactId>bifurcan</artifactId>
+      <version>0.2.0-alpha4</version>
+    </dependency>
+
+    <dependency>
       <groupId>com.eclipsesource.minimal-json</groupId>
       <artifactId>minimal-json</artifactId>
       <version>0.9.5</version>
@@ -87,27 +93,27 @@
           <version>3.1.1</version>
 
           <configuration>
-              <descriptorRefs>
-                  <descriptorRef>jar-with-dependencies</descriptorRef>
-              </descriptorRefs>
-              <archive>
-                <manifest>
-                  <mainClass>maelstrom.Main</mainClass>
-                </manifest>
-              </archive>
+            <descriptorRefs>
+              <descriptorRef>jar-with-dependencies</descriptorRef>
+            </descriptorRefs>
+            <archive>
+              <manifest>
+                <mainClass>maelstrom.Main</mainClass>
+              </manifest>
+            </archive>
           </configuration>
 
           <executions>
-              <execution>
-                  <id>make-assembly</id>
-                  <phase>package</phase>
-                  <goals>
-                      <goal>single</goal>
-                  </goals>
-              </execution>
+            <execution>
+              <id>make-assembly</id>
+              <phase>package</phase>
+              <goals>
+                <goal>single</goal>
+              </goals>
+            </execution>
           </executions>
 
-      </plugin>
+        </plugin>
       </plugins>
     </pluginManagement>
   </build>

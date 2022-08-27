@@ -48,7 +48,7 @@ public class BroadcastServer {
         node.on("read", (req) -> {
             node.reply(req, Json.object()
                     .add("type", "read_ok")
-                    .add("messages", JsonUtil.longArray(messages)));
+                    .add("messages", JsonUtil.longsToJson(messages)));
         });
 
         // And when we get an add, add it to the local set and broadcast it out
