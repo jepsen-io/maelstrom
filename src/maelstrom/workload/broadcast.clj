@@ -10,7 +10,8 @@
                        [net :as net]]
             [jepsen [checker :as checker]
                     [client :as client]
-                    [generator :as gen]]
+                    [generator :as gen]
+                    [history :as h]]
             [knossos.op :as op]
             [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
@@ -219,11 +220,11 @@
     (check [this test history opts]
       (checker/check (checker/set-full)
                      test
-                     (mapv (fn [op]
-                             (if (= :broadcast (:f op))
-                               (assoc op :f :add)
-                               op))
-                           history)
+                     (h/map (fn [op]
+                              (if (= :broadcast (:f op))
+                                (assoc op :f :add)
+                                op))
+                            history)
                      opts))))
 
 (defn workload
