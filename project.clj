@@ -8,17 +8,17 @@
              ; "-agentpath:/home/aphyr/yourkit/bin/linux-x86-64/libyjpagent.so=sampling,exceptions=disable,probe_disable=*"
              ]
   :dependencies [[org.clojure/clojure "1.11.1"]
-                 [jepsen "0.2.8-SNAPSHOT"]
+                 [jepsen "0.3.0"]
                  [amalloy/ring-buffer "1.3.1"]
                  [cheshire "5.11.0"]
                  [byte-streams "0.2.4"]
                  ; Reductions over journals
-                 [tesser.core "1.0.5"]
-                 [tesser.math "1.0.5"]
+                 [tesser.core "1.0.6"]
+                 [tesser.math "1.0.6"]
                  ; For range sets
                  [com.google.guava/guava "30.1-jre"]
                  ; Input validation
-                 [prismatic/schema "1.3.0"]
+                 [prismatic/schema "1.4.1"]
                  ; Random distributions
                  [incanter/incanter-core "1.9.3"]
                  ])
