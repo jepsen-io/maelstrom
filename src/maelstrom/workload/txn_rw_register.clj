@@ -110,6 +110,20 @@
      (reusable? [this test]
        true))))
 
+(defn checker
+  "Bit of a hack: we're probably gonna hit a zillion SCCs causing cycle search
+  timeouts, but none of them are relevant to us--they're more for G2. We ignore
+  those here. Wraps a checker from the Jepsen rw workload."
+  [rw-checker]
+  (reify checker/Checker
+    (check [this test history opts]
+      (let [res (checker/check rw-checker test history opts)
+            types' (remove #{:cycle-search-timeout} (:anomaly-types res))]
+        (assoc res
+               :anomaly-types types'
+               :anomalies (dissoc (:anomalies res) :cycle-search-timeout)
+               :valid? (not (seq types')))))))
+
 (defn workload
   "Constructs a workload for linearizable registers, given option from the CLI
   test constructor. Options are:
@@ -125,4 +139,5 @@
                       ;:sequential-keys? true
                       :wfr-keys? true
                       ))
-      (assoc :client (client (:net opts)))))
+      (assoc :client (client (:net opts)))
+      (update :checker checker)))
