@@ -310,8 +310,10 @@ whose keys are the keys of distinct queues, and whose values are the
 corresponding offsets the server should send back first (if available). For
 instance, a client might request
 
+```edn
 {"type": "poll",
 "offsets": {"a": 2}}
+```
 
 This means that the client would like to see messages from key "a"
 beginning with offset 2. The server is free to respond with any number of
@@ -319,8 +321,10 @@ contiguous messages from queue "a" so long as the first message's offset is
 2. Those messages are returned as a map of keys to arrays of [offset message]
 pairs. For example:
 
+```edn
 {"type": "poll_ok",
 "msgs": {"a": [[2 9] [3 5] [4 15]]}}
+```
 
 In queue "a", offset 2 has message 9, offset 3 has message 5, and offset 4
 has message 15. If no messages are available for a key, the server can omit

@@ -117,7 +117,8 @@
     :nemesis      #{:partition}
     :consistency-models [:read-committed]
     :availability :total
-    :rate         1000}
+    :node-count   2
+    :rate         100}
    {:workload     :unique-ids
     :bin          "demo/clojure/flake_ids.clj"
     :nemesis      #{:partition}

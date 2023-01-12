@@ -1,215 +1,172 @@
 #!/usr/bin/env bb
-(deps/add-deps
-  '{:deps {slingshot/slingshot {:mvn/version "0.12.2"}}})
+
+(load-file (clojure.string/replace *file* #"/[^/]+$" "/node.clj"))
 
 (ns maelstrom.demo.kafka
-  "A kafka-like stream processing system which stores data entirely in a single
-  node's memory."
-  (:require [cheshire.core :as json]
-            [slingshot.slingshot :refer [try+ throw+]])
-  (:import (clojure.lang ExceptionInfo)
-           (java.io BufferedReader)
-           (java.util.concurrent CompletableFuture
-                                 ExecutionException)
-           (java.util.function Function)))
+  "A kafka-like stream processing system which stores its data in lin-kv."
+  (:require [maelstrom.demo.node :as node
+             :refer [defhandler
+                     then
+                     exceptionally]]
+            [slingshot.slingshot :refer [try+ throw+]]))
 
-(def node-id
-  "Our own node ID"
-  (promise))
+(def chunk-service
+  "Where do we store our log chunks?"
+  "lin-kv")
 
-(def node-ids
-  "All node IDs in the cluster."
-  (promise))
+(def chunk-size
+  "How many offsets do we store in a single lin-kv key?"
+  32)
 
-(def next-message-id
-  "What's the next message ID we'll emit?"
-  (atom 0))
+(def offset-service
+  "Where do we store offsets?"
+  "lin-kv")
 
-(def rpcs
-  "A map of message IDs to Futures which should be delivered with replies."
+(def offset-key
+  "What key do we store offsets under?"
+  "offsets")
+
+(def offset-cache
+  "A map of log keys to what we think the next empty offset is."
   (atom {}))
 
-(defn log
-  "Logs a message to stderr"
-  [& args]
-  (locking *err*
-    (binding [*out* *err*]
-      (apply println args))))
+(defn bump-offset-cache!
+  "Inform the offset cache that for key log-key, the next free offset is at
+  least offset."
+  [log-key offset]
+  (node/log "Bump offset cache for" log-key "to" offset)
+  (swap! offset-cache
+         (fn [oc]
+           (let [o  (get oc log-key 0)
+                 o' (max o offset)]
+             (assoc oc log-key o'))))
+  (node/log "Offset cache: " @offset-cache))
 
-(defmacro then
-  "Takes a CompletableFuture, a binding vector with a symbol for the value of
-  that future and a body. Returns a CompletableFuture which evaluates body with
-  the value bound."
-  [fut [sym] & body]
-  `(.thenApply ^CompletableFuture ~fut
-               (reify Function
-                 (apply [this# ~sym]
-                   ~@body))))
+(defn chunk-key
+  "Takes a log key and an offset, and returns a key in lin-kv that we use to
+  store that log."
+  [log-key offset]
+  (str "log-" log-key "-" (-> offset
+                              (- (mod offset chunk-size))
+                              (/ chunk-size))))
 
-(defmacro exceptionally
-  "Takes a CompletableFuture, a binding vector with a symbol for an exception
-  thrown by that future, and a body. Returns a CompletableFuture which
-  evaluates body with that exception bound, if one is thrown."
-  [fut [sym] & body]
-  `(.exceptionally ^CompletableFuture ~fut
-                   (reify Function
-                     (apply [this# ~sym]
-                       ~@body))))
+(defn get-chunk
+  "Fetches the chunk for a log key and offset. Returns a future."
+  [log-key offset]
+  (-> (node/rpc! chunk-service
+                 {:type "read", :key (chunk-key log-key offset)})
+      (then [res]
+            (let [chunk (:value res)]
+              ; Every time we read a chunk, advance the offset cache
+              (bump-offset-cache! log-key (-> offset
+                                              (- (mod offset chunk-size))
+                                              (+ (count chunk))))
+              chunk))))
 
-(defn send!
-  "Sends a message on stdout."
-  [dest body]
-  (locking *out*
-    (println (json/generate-string {:src @node-id, :dest dest, :body body}))))
+(defn try-append!
+  "Tries to append a message to a log-key via CaS on that log chunk. Returns
+  a future of the offset it was appended to."
+  [log-key msg]
+  (let [offset (get @offset-cache log-key 0)
+        chunk  (-> (get-chunk log-key offset)
+                   (exceptionally [_] [])
+                   deref)
+        i      (count chunk)]
+    (if (<= chunk-size i)
+      ; Chunk full! Bump our offset and retry.
+      (do (swap! offset-cache update log-key max
+                 (-> offset
+                     (- (mod offset chunk-size))
+                     (+ chunk-size)))
+          (recur log-key msg))
+      ; Chunk not full; append and CaS
+      (-> (node/rpc! chunk-service {:type "cas"
+                                    :key  (chunk-key log-key offset)
+                                    :from chunk
+                                    :to   (conj chunk msg)
+                                    :create_if_not_exists true})
+          (then [res]
+                (let [offset' (-> offset
+                                  (- (mod offset chunk-size))
+                                  (+ i))]
+                  (bump-offset-cache! log-key (inc offset'))
+                  offset'))))))
 
-(defn reply!
-  "Replies to a request message with the given body."
-  [req body]
-  (send! (:src req) (assoc body :in_reply_to (:msg_id (:body req)))))
+(defhandler send
+  "When a client asks to send a message to a key, we try appending it, and if
+  that succeeds, return a reply."
+  [req]
+  (let [{:keys [key msg]} (:body req)]
+    (try+
+      (-> (try-append! key msg)
+          (then [offset]
+                (node/reply! req {:type "send_ok", :offset offset}))
+          deref)
+      (catch [:code 22] _
+        (throw+ {:code 30} nil "cas conflict")))))
 
-(defn rpc!
-  "Sends an RPC request body to the given node, and returns a CompletableFuture
-  of a response body."
-  [dest body]
-  (let [fut (CompletableFuture.)
-        id  (swap! next-message-id inc)]
-    (swap! rpcs assoc id fut)
-    (send! dest (assoc body :msg_id id))
-    fut))
+(defhandler poll
+  "When a client asks to poll a key, we fetch the chunk for that offset and
+  return everything after it."
+  [req]
+  (let [offsets (:offsets (:body req))
+        ; Spawn requests for all chunks in parallel
+        chunks (map (fn [[k offset]]
+                      {:key    k
+                       :offset offset
+                       :chunk  (get-chunk k offset)})
+                    offsets)
+        ; Zip together into response
+        msgs (->> chunks
+                  (map (fn [{:keys [key offset chunk]}]
+                         ; Where should we start in the chunk?
+                         (let [i0 (mod offset chunk-size)]
+                           [key (map vector
+                                     (iterate inc offset)
+                                     (drop i0 (-> chunk
+                                                  (exceptionally [_] [])
+                                                  deref)))])))
+                 (into {}))]
+    (node/reply! req
+                 {:type "poll_ok"
+                  :msgs msgs})))
 
-(defn handle-reply!
-  "Handles a reply to an RPC we issued."
-  [{:keys [body] :as reply}]
-  (when-let [fut (get @rpcs (:in_reply_to body))]
-    (if (= "error" (:type body))
-      (.completeExceptionally fut (ex-info (:text body)
-                                           (dissoc body :type :text)))
-      (.complete fut body)))
-  (swap! rpcs dissoc (:in_reply_to body)))
-
-(defn handle-init!
-  "Handles an init message by saving the node ID and node IDS to our local
-  state."
-  [{:keys [body] :as req}]
-  (deliver node-id (:node_id body))
-  (deliver node-ids (:node_ids body))
-  (log "I am node" @node-id)
-  (reply! req {:type :init_ok}))
-
-(declare handle-commit-offsets!)
-(declare handle-list-committed-offsets!)
-(declare handle-poll!)
-(declare handle-send!)
-
-(defn handle-req!
-  "Handles incoming request messages"
-  [{:keys [body] :as req}]
-  (case (:type body)
-    "init"           (handle-init! req)
-    "commit_offsets" (handle-commit-offsets! req)
-    "list_committed_offsets" (handle-list-committed-offsets! req)
-    "poll"           (handle-poll! req)
-    "send"           (handle-send! req)
-    (throw (ex-info (str "Unknown request type " (:type body))
-                    {:code 10}))))
-
-(defn keywordize-keys
-  "Converts a map's keys to keywords."
-  [m]
-  (update-keys m keyword))
-
-(defn process-stdin!
-  "Mainloop which handles messages from stdin"
+(defn get-offsets
+  "Fetches the offset map from storage. Returns a future."
   []
-  (doseq [line (line-seq (BufferedReader. *in*))]
-    (future
-      (let [req (-> (json/parse-string line)
-                    keywordize-keys
-                    (update :body keywordize-keys))]
-        (log (pr-str req))
-        (try
-          (if (:in_reply_to (:body req))
-            (handle-reply! req)
-            (handle-req! req))
-          (catch ExceptionInfo e
-            ; Send these back to the client as error messages
-            (reply! req (assoc (ex-data e)
-                               :type :error
-                               :text (ex-message e))))
-          (catch Exception e
-            (locking *err*
-              (log "Error processing request" req)
-              (log e))
-            ; And send a general-purpose error message back to the client
-            (reply! req {:type :error
-                         :code 13
-                         :text (ex-message e)})))))))
+  (-> (node/rpc! offset-service {:type "read", :key offset-key})
+      (then [res] (:value res))
+      (exceptionally [res]
+                     {})))
 
-;; Queues!
-
-(def queues
-  "An atom storing a map of keys to queues. Each queue is a vector of
-  messages."
-  (atom {}))
-
-(def committed-offsets
-  "An atom storing a map of key -> committed-offset, where a committed offset is the latest known-processed offset for that key."
-  (atom {}))
-
-(defn handle-commit-offsets!
-  "Handles a commit_offsets request by advancing the committed offsets for a
-  key to just past the given offsets."
-  [{:keys [src body] :as req}]
-  (swap! committed-offsets (partial merge-with max) (:offsets body))
-  (log "New offsets" (pr-str @committed-offsets))
-  (reply! req {:type "commit_offsets_ok"}))
-
-(defn handle-list-committed-offsets!
-  "Handles a request for committed offsets by fetching the given keys from the
-  committed offsets map."
+(defhandler list_committed_offsets
+  "We fetch the committed offsets map from storage, and filter it to just the
+  requested keys."
   [{:keys [body] :as req}]
-  (reply! req {:type "list_committed_offsets_ok"
-               :offsets (select-keys @committed-offsets (:keys body))}))
+  (-> (get-offsets)
+      (then [offsets]
+            (node/reply! req
+                         {:type    "list_committed_offsets_ok"
+                          :offsets (select-keys offsets (:keys body))}))
+      deref))
 
-(defn handle-poll!
-  "Handles a poll RPC request by fetching messages from queues, starting at the
-  given offsets."
+(defhandler commit_offsets
+  "To commit offsets, we CaS the offsets key, advancing offsets to their
+  maxima."
   [{:keys [body] :as req}]
-  (let [offsets (:offsets body)
-        ; And the current state of the queues
-        queues @queues
-        ; What messages can we deliver?
-        _ (log "Requested offsets are" (pr-str offsets))
-        msgs   (->> offsets
-                    (keep (fn [[k offset]]
-                            ; What's unconsumed for this key?
-                            (let [queue   (get queues k [])
-                                  offset  (min offset (count queue))
-                                  msgs    (subvec queue offset)
-                                  offsets (iterate inc offset)]
-                              (when (seq msgs)
-                                (log "key" k "queue" queue "offset" offset "msgs" msgs)
-                                [k (map vector offsets msgs)]))))
-                    (into (sorted-map)))]
-    (reply! req {:type "poll_ok"
-                 :msgs msgs})))
+  (let [offsets  @(get-offsets)
+        offsets' (merge-with max offsets (:offsets body))]
+    (try+
+      (-> (node/rpc! offset-service
+                     {:type "cas"
+                      :key offset-key
+                      :from offsets
+                      :to offsets'
+                      :create_if_not_exists true})
+          (then [res]
+                (node/reply! req {:type "commit_offsets_ok"}))
+          deref)
+      (catch [:code 22] _
+        (throw+ {:code 30} nil "cas conflict")))))
 
-(defn handle-send!
-  "Handles a send RPC request by adding a message to the appropriate queue."
-  [{:keys [body] :as req}]
-  (let [k      (:key body)
-        msg    (:msg body)
-        queues (swap! queues (fn [queues]
-                               (let [queue  (get queues k [])
-                                     queue' (conj queue msg)]
-                                 (assoc queues k queue'))))]
-    (log "New queues:" (pr-str queues))
-    (reply! req {:type "send_ok", :offset (dec (count (get queues k)))})))
-
-; Go!
-(try
-  (process-stdin!)
-  (catch Throwable t
-    (locking *err*
-      (log (str "Fatal error: " t))
-      (.printStackTrace t *err*))))
+(node/start!)
