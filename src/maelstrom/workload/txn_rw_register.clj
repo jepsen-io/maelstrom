@@ -1,5 +1,5 @@
-(ns maelstrom.workload.txn-list-append
-  "A transactional workload over a map of keys to lists of elements. Clients
+(ns maelstrom.workload.txn-rw-register
+  "A transactional workload over a map of keys to values. Clients
   submit a single transaction via a `txn` request, and expect a
   completed version of that transaction in a `txn_ok` response.
 
@@ -22,14 +22,12 @@
   null]`. The server processing the transaction should replace that value with
   whatever the observed value is for that key: `[\"r\", 5, [1, 2]]`.
 
-  An *append* adds an element to the end of the key's current value. For
-  instance, `[\"append\", 5, 3]` means \"add 3 to the end of the list for key
-  5.\" If key 5 were currently `[1, 2]`, the resulting value would become `[1,
-  2, 3]`. Appends have values provided by the client, and are returned
-  unchanged.
+  A *write* replaces the value for a key. For instance, `[\"w\", 5, 3]` means
+  \"set key 5's value to 3\". Write values are provided by the client, and are
+  returned unchanged.
 
-  Unlike lin-kv, nonexistent keys should be returned as `null`. Lists are
-  implicitly created on first append.
+  Unlike lin-kv, nonexistent keys should be returned as `null`. Keys are
+  implicitly created on first write.
 
   This workload can check many kinds of consistency models. See the
   `--consistency-models` CLI option for details."
@@ -40,30 +38,27 @@
             [jepsen [client :as client]
                     [generator :as gen]
                     [independent :as independent]]
-            [jepsen.tests.cycle.append :as append]
+            ; wow I cannot standardize wr vs rw to save my life
+            [jepsen.tests.cycle.wr :as wr]
             [schema.core :as s]))
 
-(c/deferror 30 txn-conflict
-  "The requested transaction has been aborted because of a conflict with
-  another transaction. Servers need not return this error on every conflict:
-  they may choose to retry automatically instead."
-  {:definite? true})
-
-(def Key     s/Any)
-(def Element s/Any)
+(def Key   s/Any)
+(def Value s/Any)
 
 (def ReadReq [(s/one (s/eq "r") "f") (s/one Key "k") (s/one (s/eq nil) "v")])
-(def ReadRes [(s/one (s/eq "r") "f") (s/one Key "k") (s/one [Element] "v")])
-(def Append  [(s/one (s/eq "append") "f") (s/one Key "k") (s/one Element "v")])
+(def ReadRes [(s/one (s/eq "r") "f") (s/one Key "k") (s/one Value "v")])
+(def Write   [(s/one (s/eq "w") "f") (s/one Key "k") (s/one Value "v")])
 
 (c/defrpc txn!
   "Requests that the node execute a single transaction. Servers respond with a
-  `txn_ok` message, and a completed version of the requested transaction; e.g.
-  with read values filled in. Keys and list elements may be of any type."
+  `txn_ok` message, and a completed version of the requested transaction--e.g.
+  with read values filled in. Keys and values may be of any type, but if you
+  need types for your language, it's probably safe to assume both are
+  integers."
   {:type  (s/eq "txn")
-   :txn   [(s/either ReadReq Append)]}
+   :txn   [(s/either ReadReq Write)]}
   {:type  (s/eq "txn_ok")
-   :txn   [(s/either ReadRes Append)]})
+   :txn   [(s/either ReadRes Write)]})
 
 (defn kw->str
   "We use keywords for our :f's. Converts keywords to strings in a txn."
@@ -80,7 +75,7 @@
         txn))
 
 (defn client
-  "Construct a linearizable key-value client for the given network"
+  "Construct a transactional write-read register client for the given network"
   ([net]
    (client net nil nil))
   ([net conn node]
@@ -117,8 +112,11 @@
     :key-count            Number of keys to work on at any single time
     :min-txn-length       Minimum number of ops per transaction
     :max-txn-length       Maximum number of ops per transaction
-    :max-writes-per-key   How many elements to (try) appending to a single key.
+    :max-writes-per-key   How many values to try writing to a single key.
     :consistency-models   What kinds of consistency models to check for."
   [opts]
-  (-> (append/test opts)
+  (-> (wr/test (assoc opts
+                      ;:sequential-keys? true
+                      :wfr-keys? true
+                      ))
       (assoc :client (client (:net opts)))))

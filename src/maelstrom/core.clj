@@ -1,10 +1,12 @@
 (ns maelstrom.core
   (:gen-class)
   (:refer-clojure :exclude [run! test])
-  (:require [clojure.string :as str]
+  (:require [clojure [edn :as edn]
+                     [string :as str]]
             [clojure.tools.logging :refer [info warn]]
             [elle.consistency-model :as cm]
-            [maelstrom [client :as c]
+            [maelstrom [checker :refer [availability-checker]]
+                       [client :as c]
                        [db :as db]
                        [doc :as doc]
                        [net :as net]
@@ -18,7 +20,8 @@
                                 [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]
-                                [txn-list-append :as txn-list-append]]
+                                [txn-list-append :as txn-list-append]
+                                [txn-rw-register :as txn-rw-register]]
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [core :as core]
@@ -38,7 +41,8 @@
    :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload
    :lin-kv          lin-kv/workload
-   :txn-list-append txn-list-append/workload})
+   :txn-list-append txn-list-append/workload
+   :txn-rw-register txn-rw-register/workload})
 
 (def nemeses
   "A set of valid nemeses you can pass at the CLI."
@@ -89,6 +93,7 @@
                         :exceptions (checker/unhandled-exceptions)
                         :stats      (-> (checker/stats)
                                         jepsen.kafka/stats-checker)
+                        :availability (availability-checker)
                         :net        (net.checker/checker)
                         :workload   (:checker workload)})
             :generator generator
@@ -127,7 +132,18 @@
 
 (def opt-spec
   "Extra options for the CLI"
-  [[nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
+  [[nil "--availability EXPECTED" "The fraction of client requests which must succeed. Either a number from 0 to 1 or total. If omitted, always valid."
+    :default nil
+    :parse-fn (fn [s]
+                (cond (= "total" s) :total
+                      true (edn/read-string s)))
+    :validate [(fn [a]
+                 (or (nil? a)
+                     (= :total a)
+                     (<= 0 a 1)))
+               "must be either 'total' or a number between 0 and 1."]]
+
+   [nil "--consistency-models MODELS" "A comma-separated list of consistency models to check."
     :default [:strict-serializable]
     :parse-fn (fn [s]
                 (map keyword (str/split s #"\s+,\s+")))
