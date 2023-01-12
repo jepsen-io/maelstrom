@@ -30,13 +30,19 @@
   implicitly created on first write.
 
   This workload can check many kinds of consistency models. See the
-  `--consistency-models` CLI option for details."
+  `--consistency-models` CLI option for details. Right now it only uses
+  writes-follow-reads within individual transactions to infer version
+  orders--this severely limits the transaction dependencies it can infer. We
+  can make this configurable later."
   (:refer-clojure :exclude [read])
-  (:require [elle.core :as elle]
+  (:require [dom-top.core :refer [loopr]]
+            [elle.core :as elle]
             [maelstrom [client :as c]
                        [net :as net]]
-            [jepsen [client :as client]
+            [jepsen [checker :as checker]
+                    [client :as client]
                     [generator :as gen]
+                    [history :as h]
                     [independent :as independent]]
             ; wow I cannot standardize wr vs rw to save my life
             [jepsen.tests.cycle.wr :as wr]

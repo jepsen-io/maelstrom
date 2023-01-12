@@ -29,6 +29,8 @@ messages that you'll need to handle.
 - [Lin-kv](#workload-lin-kv)
 - [Pn-counter](#workload-pn-counter)
 - [Txn-list-append](#workload-txn-list-append)
+- [Txn-rw-register](#workload-txn-rw-register)
+- [Unique-ids](#workload-unique-ids)
 
 ## Workload: Broadcast 
 
@@ -530,7 +532,7 @@ Response:
 ## Workload: Txn-list-append 
 
 A transactional workload over a map of keys to lists of elements. Clients
-submit a single transaction per request via a `txn` request, and expect a
+submit a single transaction via a `txn` request, and expect a
 completed version of that transaction in a `txn_ok` response.
 
 A transaction is an array of micro-operations, which should be executed in
@@ -548,7 +550,7 @@ Each micro-op is a 3-element array comprising a function, key, and value:
 
 There are two functions. A *read* observes the current value of a specific
 key. `["r", 5, [1, 2]]` denotes that a read of key 5 observed the list `[1,
-2]`. When clients submit writes, they leave their values `null`:  `["r", 5,
+2]`. When clients submit reads, they leave their values `null`:  `["r", 5,
 null]`. The server processing the transaction should replace that value with
 whatever the observed value is for that key: `["r", 5, [1, 2]]`.
 
@@ -589,6 +591,124 @@ Response:
  [(either
    [(one (eq "r") "f") (one Any "k") (one [Any] "v")]
    [(one (eq "append") "f") (one Any "k") (one Any "v")])],
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+
+## Workload: Txn-rw-register 
+
+A transactional workload over a map of keys to values. Clients
+submit a single transaction via a `txn` request, and expect a
+completed version of that transaction in a `txn_ok` response.
+
+A transaction is an array of micro-operations, which should be executed in
+order:
+
+```edn
+[op1, op2, ...]
+```
+
+Each micro-op is a 3-element array comprising a function, key, and value:
+
+```edn
+[f, k, v]
+```
+
+There are two functions. A *read* observes the current value of a specific
+key. `["r", 5, [1, 2]]` denotes that a read of key 5 observed the list `[1,
+2]`. When clients submit reads, they leave their values `null`:  `["r", 5,
+null]`. The server processing the transaction should replace that value with
+whatever the observed value is for that key: `["r", 5, [1, 2]]`.
+
+A *write* replaces the value for a key. For instance, `["w", 5, 3]` means
+"set key 5's value to 3". Write values are provided by the client, and are
+returned unchanged.
+
+Unlike lin-kv, nonexistent keys should be returned as `null`. Keys are
+implicitly created on first write.
+
+This workload can check many kinds of consistency models. See the
+`--consistency-models` CLI option for details. Right now it only uses
+writes-follow-reads within individual transactions to infer version
+orders--this severely limits the transaction dependencies it can infer. We
+can make this configurable later. 
+
+### RPC: Txn! 
+
+Requests that the node execute a single transaction. Servers respond with a
+`txn_ok` message, and a completed version of the requested transaction--e.g.
+with read values filled in. Keys and values may be of any type, but if you
+need types for your language, it's probably safe to assume both are
+integers. 
+
+Request:
+
+```clj
+{:type (eq "txn"),
+ :txn
+ [(either
+   [(one (eq "r") "f") (one Any "k") (one (eq nil) "v")]
+   [(one (eq "w") "f") (one Any "k") (one Any "v")])],
+ :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "txn_ok"),
+ :txn
+ [(either
+   [(one (eq "r") "f") (one Any "k") (one Any "v")]
+   [(one (eq "w") "f") (one Any "k") (one Any "v")])],
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+
+## Workload: Unique-ids 
+
+A simple workload for ID generation systems. Clients ask servers to generate
+an ID, and the server should respond with an ID. The test verifies that those
+IDs are globally unique.
+
+Your node will receive a request body like:
+
+```json
+{"type": "generate",
+"msg_id": 2}
+```
+
+And should respond with something like:
+
+```json
+{"type": "generate_ok",
+"in_reply_to": 2,
+"id": 123}
+```
+
+IDs may be of any type--strings, booleans, integers, floats, compound JSON
+values, etc. 
+
+### RPC: Generate! 
+
+Asks a node to generate a new ID. Servers respond with a generate_ok message
+containing an `id` field, which should be a globally unique value. IDs may be
+of any type. 
+
+Request:
+
+```clj
+{:type (eq "generate"), :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "generate_ok"),
+ :id Any,
  #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```

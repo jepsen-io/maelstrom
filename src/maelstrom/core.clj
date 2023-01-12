@@ -21,7 +21,8 @@
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]
                                 [txn-list-append :as txn-list-append]
-                                [txn-rw-register :as txn-rw-register]]
+                                [txn-rw-register :as txn-rw-register]
+                                [unique-ids :as unique-ids]]
             [jepsen [checker :as checker]
                     [cli :as cli]
                     [core :as core]
@@ -42,7 +43,8 @@
    :pn-counter      pn-counter/workload
    :lin-kv          lin-kv/workload
    :txn-list-append txn-list-append/workload
-   :txn-rw-register txn-rw-register/workload})
+   :txn-rw-register txn-rw-register/workload
+   :unique-ids      unique-ids/workload})
 
 (def nemeses
   "A set of valid nemeses you can pass at the CLI."
@@ -108,8 +110,19 @@
    {:workload :pn-counter,  :bin "demo/ruby/pn_counter.rb"}
    {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}
    {:workload :lin-kv       :bin "demo/ruby/lin_kv_proxy.rb", :concurrency 10}
-   {:workload :txn-list-append
-    :bin      "demo/ruby/datomic_list_append.rb"}])
+   {:workload     :txn-list-append
+    :bin          "demo/ruby/datomic_list_append.rb"}
+   {:workload     :txn-rw-register
+    :bin          "demo/clojure/txn_rw_register_hat.clj"
+    :nemesis      #{:partition}
+    :consistency-models [:read-committed]
+    :availability :total
+    :rate         1000}
+   {:workload     :unique-ids
+    :bin          "demo/clojure/flake_ids.clj"
+    :nemesis      #{:partition}
+    :availability :total
+    :rate         1000}])
 
 (defn demo-tests
   "Takes CLI options and constructs a sequence of tests to run which
