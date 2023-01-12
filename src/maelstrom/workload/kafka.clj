@@ -78,8 +78,10 @@
   corresponding offsets the server should send back first (if available). For
   instance, a client might request
 
-      {\"type\": \"poll\",
-       \"offsets\": {\"a\": 2}}
+  ```edn
+  {\"type\": \"poll\",
+   \"offsets\": {\"a\": 2}}
+  ```
 
   This means that the client would like to see messages from key \"a\"
   beginning with offset 2. The server is free to respond with any number of
@@ -87,8 +89,10 @@
   2. Those messages are returned as a map of keys to arrays of [offset message]
   pairs. For example:
 
-      {\"type\": \"poll_ok\",
-       \"msgs\": {\"a\": [[2 9] [3 5] [4 15]]}}
+  ```edn
+  {\"type\": \"poll_ok\",
+   \"msgs\": {\"a\": [[2 9] [3 5] [4 15]]}}
+  ```
 
   In queue \"a\", offset 2 has message 9, offset 3 has message 5, and offset 4
   has message 15. If no messages are available for a key, the server can omit
