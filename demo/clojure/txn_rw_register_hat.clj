@@ -116,8 +116,6 @@
 (node/defhandler txn
   "When a transaction arrives, apply it to the local state."
   [{:keys [body] :as req}]
-  (when (< 0.5 (rand))
-    (/ 1 0))
   (let [txn  (:txn body)
         ; Apply txn locally, assigning a timestamp and performing reads.
         txn+ (apply-txn+! {:txn txn})]
