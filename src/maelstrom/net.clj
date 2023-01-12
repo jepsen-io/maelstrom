@@ -234,7 +234,7 @@
         ; No partition, OK, let's go!
         (do (when (pos? dt)
               ; This message isn't due for a bit; block until it's ready
-              (Thread/sleep dt))
+              (Thread/sleep (long dt)))
 
             ; Log to console
             (when log-recv? (info :recv (pr-str message)))
