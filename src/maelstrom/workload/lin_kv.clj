@@ -9,23 +9,6 @@
             [jepsen.tests.linearizable-register :as lin-reg]
             [schema.core :as s]))
 
-(c/deferror 20 key-does-not-exist
-  "The client requested an operation on a key which does not exist (assuming
-  the operation should not automatically create missing keys)."
-  {:definite? true})
-
-(c/deferror 21 key-already-exists
-  "The client requested the creation of a key which already exists, and the
-  server will not overwrite it."
-  {:definite? true})
-
-(c/deferror 22 precondition-failed
-  "The requested operation expected some conditions to hold, and those
-  conditions were not met. For instance, a compare-and-set operation might
-  assert that the value of a key is currently 5; if the value is 3, the server
-  would return `precondition-failed`."
-  {:definite? true})
-
 (c/defrpc read
   "Reads the current value of a single key. Clients send a `read` request with
   the key they'd like to observe, and expect a response with the current

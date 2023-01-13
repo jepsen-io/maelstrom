@@ -2,14 +2,17 @@
   "A synchronous client for the Maelstrom network. Handles sending and
   receiving messages, performing RPC calls, and throwing exceptions from
   errors."
-  (:require [clojure.tools.logging :refer [info warn]]
-            [clojure [pprint :refer [pprint]]
+  (:require [clojure [edn :as edn]
+                     [pprint :refer [pprint]]
                      [string :as str]]
+            [clojure.java [io :as io]]
+            [clojure.tools.logging :refer [info warn]]
             [maelstrom [net :as net]
                        [util :as u]]
             [schema.core :as s]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import (java.util.concurrent PriorityBlockingQueue
+  (:import (java.io PushbackReader)
+           (java.util.concurrent PriorityBlockingQueue
                                  TimeUnit)))
 
 (def default-timeout
@@ -21,83 +24,19 @@
   keys:
 
     :definite?  If true, this error means the requested operation definitely did not happen
-    :ns         The namespace where the error was defined
     :name       A keyword, friendly name for the error
     :doc        A docstring describing the meaning of the error"
-  (atom {}))
-
-(defmacro deferror
-  "Defines a new type of error. Takes an error code, a name (a symbol, which is
-  converted to a keyword and used as the `:name` of the error), a docstring,
-  and an error spec map, which is merged into the error registry. `defs` the
-  name symbol to the error map."
-  [code name docstring & [error-spec]]
-  (let [name-sym name
-        name  (keyword name)
-        error (assoc error-spec
-                     :ns   *ns*
-                     :doc  docstring
-                     :code code
-                     :name name)]
-    (swap! error-registry
-           (fn [registry]
-             ; Check for dups
-             (when (contains? registry code)
-               (throw+ {:type :duplicate-error-code
-                        :code code
-                        :extant (get registry code)}))
-             (when-let [extant (first (filter (comp #{name} :name)
-                                              (vals registry)))]
-               (throw+ {:type   :duplicate-error-name
-                        :name   name
-                        :extant extant}))
-             (assoc registry code error)))
-    `(def ~name-sym ~error)))
-
-(deferror 0 timeout
-  "Indicates that the requested operation could not be completed within a
-  timeout.")
-
-(deferror 1 node-not-found
-  "Thrown when a client sends an RPC request to a node which does not exist."
-  {:definite? true})
-
-(deferror 10 not-supported
-  "Use this error to indicate that a requested operation is not supported by
-  the current implementation. Helpful for stubbing out APIs during
-  development."
-  {:definite? true})
-
-(deferror 11 temporarily-unavailable
-  "Indicates that the operation definitely cannot be performed at this
-  time--perhaps because the server is in a read-only state, has not yet been
-  initialized, believes its peers to be down, and so on. Do *not* use this
-  error for indeterminate cases, when the operation may actually have taken
-  place."
-  {:definite? true})
-
-(deferror 12 malformed-request
-  "The client's request did not conform to the server's expectations, and could
-  not possibly have been processed."
-  {:definite? true})
-
-(deferror 13 crash
-  "Indicates that some kind of general, indefinite error occurred. Use
-  this as a catch-all for errors you can't otherwise categorize, or as a
-  starting point for your error handler: it's safe to return `internal-error`
-  for every problem by default, then add special cases for more specific errors
-  later."
-  {:definite? false})
-
-(deferror 14 abort
-  "Indicates that some kind of general, definite error occurred. Use this as a
-  catch-all for errors you can't otherwise categorize, when you specifically
-  know that the requested operation has not taken place. For instance, you
-  might encounter an indefinite failure during the prepare phase of a
-  transaction: since you haven't started the commit process yet, the
-  transaction can't have taken place. It's therefore safe to return a definite
-  `abort` to the client."
-  {:definite? true})
+  (delay
+    (->> (with-open [r (PushbackReader. (io/reader (io/resource "errors.edn")))]
+           (edn/read r))
+         (reduce (fn [registry {:keys [code name doc definite?] :as error}]
+                   (assert (every? #{:code :name :doc :definite?} (keys error)))
+                   (assert (not (contains? registry code))
+                           (str "Duplicate error code " code))
+                   (assert (not-any? #{name} (map :name (vals registry)))
+                           (str "Duplicate error name " name))
+                   (assoc registry code error))
+                 {}))))
 
 (defn open!
   "Creates a new synchronous network client, which can only do one thing at a

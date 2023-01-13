@@ -43,12 +43,6 @@
             [jepsen.tests.cycle.append :as append]
             [schema.core :as s]))
 
-(c/deferror 30 txn-conflict
-  "The requested transaction has been aborted because of a conflict with
-  another transaction. Servers need not return this error on every conflict:
-  they may choose to retry automatically instead."
-  {:definite? true})
-
 (def Key     s/Any)
 (def Element s/Any)
 

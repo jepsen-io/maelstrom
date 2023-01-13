@@ -277,8 +277,8 @@
                                    :opt-fn*  opt-fn
                                    :tests-fn demo-tests})
                                 "test-all")}
+                   ; Generate documentation
                    {"doc" {:opt-spec []
                            :run (fn [opts]
                                   (doc/write-docs!))}})
-
             args))

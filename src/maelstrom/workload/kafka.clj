@@ -175,35 +175,36 @@
   (setup! [_ test])
 
   (invoke! [_ test {:keys [f value] :as op}]
-    (case f
-      :assign (do (if (:seek-to-beginning? op)
-                    ; We want to rewind to zero on everything
-                    (reset! offsets (zipmap value (repeat 0)))
-                    ; Fetch committed offsets from storage
-                    (let [committed (list_committed_offsets
-                                      conn node
-                                      {:keys value})]
-                      (swap! offsets
-                             (fn [offsets]
-                               (->> value
-                                    (map (fn [k]
-                                           [k (or (offsets k)
-                                                  (committed k)
-                                                  0)]))
-                                    (into {}))))))
-                  (assoc op :type :ok))
+    (c/with-errors op #{:assign}
+      (case f
+        :assign (do (if (:seek-to-beginning? op)
+                      ; We want to rewind to zero on everything
+                      (reset! offsets (zipmap value (repeat 0)))
+                      ; Fetch committed offsets from storage
+                      (let [committed (list_committed_offsets
+                                        conn node
+                                        {:keys value})]
+                        (swap! offsets
+                               (fn [offsets]
+                                 (->> value
+                                      (map (fn [k]
+                                             [k (or (offsets k)
+                                                    (committed k)
+                                                    0)]))
+                                      (into {}))))))
+                    (assoc op :type :ok))
 
-      :crash (assoc op :type :info)
+        :crash (assoc op :type :info)
 
-      (:poll, :send) (do (assert (= 1 (count value)))
-                         (let [mop' (apply-mop! conn node offsets (first value))
-                               txn' [mop']
-                               offsets (txn-offsets txn')]
-                           (when (seq offsets)
-                             ; And commit remotely
-                             ;(info "Committing offsets" offsets)
-                             (commit_offsets! conn node {:offsets offsets}))
-                           (assoc op :type :ok, :value txn')))))
+        (:poll, :send) (do (assert (= 1 (count value)))
+                           (let [mop' (apply-mop! conn node offsets (first value))
+                                 txn' [mop']
+                                 offsets (txn-offsets txn')]
+                             (when (seq offsets)
+                               ; And commit remotely
+                               ;(info "Committing offsets" offsets)
+                               (commit_offsets! conn node {:offsets offsets}))
+                             (assoc op :type :ok, :value txn'))))))
 
   (teardown! [_ test])
 
