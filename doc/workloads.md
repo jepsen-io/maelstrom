@@ -569,6 +569,7 @@ receive a request body like:
 
 ```json
 {"type": "txn",
+"msg_id": 1,
 "txn": [["r", 1, null], ["append", 1, 6], ["append", 2, 9]]}
 ```
 
@@ -576,6 +577,7 @@ You might return a response like:
 
 ```json
 {"type": "txn_ok",
+"in_reply_to": 1,
 "txn": [["r", 1, [8]], ["append", 1, 6], ["append", 2, 9]]}
 ```
 
@@ -658,6 +660,7 @@ receive a request body like:
 
 ```json
 {"type": "txn",
+"msg_id": 1,
 "txn": [["r", 1, null], ["w", 1, 6], ["w", 2, 9]]}
 ```
 
@@ -665,6 +668,7 @@ You might return a response like:
 
 ```json
 {"type": "txn_ok",
+"in_reply_to": 1,
 "txn": [["r", 1, 8], ["w", 1, 6], ["w", 2, 9]]}
 ```
 
