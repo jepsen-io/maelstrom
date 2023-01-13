@@ -26,6 +26,29 @@
   \"set key 5's value to 3\". Write values are provided by the client, and are
   returned unchanged.
 
+  For example, assume the current state of the database is `{1 8}`, and you
+  receive a request body like:
+
+  ```json
+  {\"type\": \"txn\",
+   \"txn\": [[\"r\", 1, null], [\"w\", 1, 6], [\"w\", 2, 9]]}
+  ```
+
+  You might return a response like:
+
+  ```json
+  {\"type\": \"txn_ok\",
+   \"txn\": [[\"r\", 1, 8], [\"w\", 1, 6], [\"w\", 2, 9]]}
+  ```
+
+  First you read the current value of key 1, returning the value 8. Then you
+  set key 1 to 6. Then you set key 2 to 9, implicitly creating it. The
+  resulting state of the database would be `{1 6, 2 9}`.
+
+  Writes in this workload are always integers, and are unique per key. Key
+  `x` will only ever see at most one write of `0`, at most one write of `1`,
+  and so on.
+
   Unlike lin-kv, nonexistent keys should be returned as `null`. Keys are
   implicitly created on first write.
 

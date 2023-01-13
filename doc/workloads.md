@@ -564,6 +564,29 @@ instance, `["append", 5, 3]` means "add 3 to the end of the list for key
 2, 3]`. Appends have values provided by the client, and are returned
 unchanged.
 
+For example, assume the current state of the database is `{1 [8]}`, and you
+receive a request body like:
+
+```json
+{"type": "txn",
+"txn": [["r", 1, null], ["append", 1, 6], ["append", 2, 9]]}
+```
+
+You might return a response like:
+
+```json
+{"type": "txn_ok",
+"txn": [["r", 1, [8]], ["append", 1, 6], ["append", 2, 9]]}
+```
+
+First you read the current value of key 1, returning the list [8]. Then you
+append 6 to key 1. Then you append 9 to key 2, implicitly creating it. The
+resulting state of the database would be `{1 [8, 6], 2 [9]}`.
+
+Appends in this workload are always integers, and are unique per key. Key
+`x` will only ever see at most one append of `0`, at most one append of `1`,
+and so on.
+
 Unlike lin-kv, nonexistent keys should be returned as `null`. Lists are
 implicitly created on first append.
 
@@ -629,6 +652,29 @@ whatever the observed value is for that key: `["r", 5, [1, 2]]`.
 A *write* replaces the value for a key. For instance, `["w", 5, 3]` means
 "set key 5's value to 3". Write values are provided by the client, and are
 returned unchanged.
+
+For example, assume the current state of the database is `{1 8}`, and you
+receive a request body like:
+
+```json
+{"type": "txn",
+"txn": [["r", 1, null], ["w", 1, 6], ["w", 2, 9]]}
+```
+
+You might return a response like:
+
+```json
+{"type": "txn_ok",
+"txn": [["r", 1, 8], ["w", 1, 6], ["w", 2, 9]]}
+```
+
+First you read the current value of key 1, returning the value 8. Then you
+set key 1 to 6. Then you set key 2 to 9, implicitly creating it. The
+resulting state of the database would be `{1 6, 2 9}`.
+
+Writes in this workload are always integers, and are unique per key. Key
+`x` will only ever see at most one write of `0`, at most one write of `1`,
+and so on.
 
 Unlike lin-kv, nonexistent keys should be returned as `null`. Keys are
 implicitly created on first write.
