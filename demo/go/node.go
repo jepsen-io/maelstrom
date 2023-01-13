@@ -2,6 +2,7 @@ package maelstrom
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,14 @@ func NewNode() *Node {
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 	}
+}
+
+// Init is used for initializing the node. This is normally called after
+// receiving an "init" message but it can also be called manually when
+// initializing unit tests.
+func (n *Node) Init(id string, nodeIDs []string) {
+	n.id = id
+	n.nodeIDs = nodeIDs
 }
 
 // ID returns the identifier for this node.
@@ -82,21 +91,11 @@ func (n *Node) Run() error {
 		}
 		log.Printf("Received %s", msg)
 
-		// The init message has special handling. It is processed synchronously
-		// to avoid race conditions and the node handles the reply itself.
-		if body.Type == "init" {
-			if err := n.handleInit(msg); err != nil {
-				return fmt.Errorf("handle init: %w", err)
-			}
-			continue
-		}
-
 		// What handler should we use for this message?
-		var h HandlerFunc
 		if body.InReplyTo != 0 {
 			// Extract callback, if replying to a previous message.
 			n.mu.Lock()
-			h = n.callbacks[body.InReplyTo]
+			h := n.callbacks[body.InReplyTo]
 			delete(n.callbacks, body.InReplyTo)
 			n.mu.Unlock()
 
@@ -105,19 +104,29 @@ func (n *Node) Run() error {
 				log.Printf("Ignoring reply to %d with no callback", body.InReplyTo)
 				continue
 			}
-		} else {
-			// If this is not a callback, ensure that a handler is registered.
-			h = n.handlers[body.Type]
-			if h == nil {
-				return fmt.Errorf("No handler for %s", line)
-			}
+
+			// Handle callback in a separate goroutine.
+			n.wg.Add(1)
+			go func() {
+				defer n.wg.Done()
+				n.handleCallback(h, msg)
+			}()
+			continue
+		}
+
+		// If this is not a callback, ensure that a handler is registered.
+		var h HandlerFunc
+		if body.Type == "init" {
+			h = n.handleInitMessage // wraps init message with special handling.
+		} else if h = n.handlers[body.Type]; h == nil {
+			return fmt.Errorf("No handler for %s", line)
 		}
 
 		// Handle message in a separate goroutine.
 		n.wg.Add(1)
 		go func() {
 			defer n.wg.Done()
-			n.handle(h, msg)
+			n.handleMessage(h, msg)
 		}()
 	}
 	if err := scanner.Err(); err != nil {
@@ -130,8 +139,15 @@ func (n *Node) Run() error {
 	return nil
 }
 
-// handle sends msg to a handler function. Sends an RPC error if an error is returned.
-func (n *Node) handle(h HandlerFunc, msg Message) {
+// handleCallback sends msg response to a callback function. Logs error, if one occurs.
+func (n *Node) handleCallback(h HandlerFunc, msg Message) {
+	if err := h(msg); err != nil {
+		log.Printf("callback error: %s", err)
+	}
+}
+
+// handleMessage sends msg to a handler function. Sends an RPC error if an error is returned.
+func (n *Node) handleMessage(h HandlerFunc, msg Message) {
 	if err := h(msg); err != nil {
 		switch err := err.(type) {
 		case *RPCError:
@@ -147,13 +163,12 @@ func (n *Node) handle(h HandlerFunc, msg Message) {
 	}
 }
 
-func (n *Node) handleInit(msg Message) error {
+func (n *Node) handleInitMessage(msg Message) error {
 	var body InitMessageBody
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return fmt.Errorf("unmarshal init message body: %w", err)
 	}
-	n.id = body.NodeID
-	n.nodeIDs = body.NodeIDs
+	n.Init(body.NodeID, body.NodeIDs)
 
 	// Delegate to application initialization handler, if specified.
 	if h := n.handlers["init"]; h != nil {
@@ -216,21 +231,7 @@ func (n *Node) Send(dest string, body any) error {
 	return err
 }
 
-// Broadcast sends a message to all other nodes.
-func (n *Node) Broadcast(body any) error {
-	for _, id := range n.nodeIDs {
-		if id == n.id {
-			continue
-		}
-		if err := n.Send(id, body); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// RPC send an async RPC request. Handler invoked when response message received.
+// RPC sends an async RPC request. Handler invoked when response message received.
 func (n *Node) RPC(dest string, body any, handler HandlerFunc) error {
 	n.mu.Lock()
 
@@ -255,17 +256,28 @@ func (n *Node) RPC(dest string, body any, handler HandlerFunc) error {
 	return n.Send(dest, b)
 }
 
-// BroadcastRPC sends an RPC message to all other nodes.
-func (n *Node) BroadcastRPC(body any, handler HandlerFunc) error {
-	for _, id := range n.nodeIDs {
-		if id == n.id {
-			continue
-		}
-		if err := n.RPC(id, body, handler); err != nil {
-			return err
-		}
+// SyncRPC sends a synchronous RPC request. Returns the response message. RPC
+// errors in the message body are converted to *RPCError and are returned.
+func (n *Node) SyncRPC(ctx context.Context, dest string, body any) (Message, error) {
+	respCh := make(chan Message)
+	if err := n.RPC(dest, body, func(m Message) error {
+		respCh <- m
+		return nil
+	}); err != nil {
+		return Message{}, err
 	}
-	return nil
+
+	// Wait for either the context to finish or for the response message to arrive.
+	select {
+	case <-ctx.Done():
+		return Message{}, ctx.Err()
+
+	case m := <-respCh:
+		if err := m.RPCError(); err != nil {
+			return m, err
+		}
+		return m, nil
+	}
 }
 
 // Message represents a message sent from Src node to Dest node.
@@ -276,11 +288,44 @@ type Message struct {
 	Body json.RawMessage `json:"body,omitempty"`
 }
 
+// Type returns the "type" field from the message body.
+// Returns blank string if field does not exist or body is malformed.
+func (m *Message) Type() string {
+	var body MessageBody
+	if err := json.Unmarshal(m.Body, &body); err != nil {
+		return ""
+	}
+	return body.Type
+}
+
+// RPCError returns the RPC error from the message body.
+// Returns a malformed body as a generic crash error.
+func (m *Message) RPCError() *RPCError {
+	var body MessageBody
+	if err := json.Unmarshal(m.Body, &body); err != nil {
+		return NewRPCError(Crash, err.Error())
+	} else if body.Code == 0 {
+		return nil // no error
+	}
+	return NewRPCError(body.Code, body.Text)
+}
+
 // MessageBody represents the reserved keys for a message body.
 type MessageBody struct {
-	Type      string `json:"type,omitempty"`
-	MsgID     int    `json:"msg_id,omitempty"`
-	InReplyTo int    `json:"in_reply_to,omitempty"`
+	// Message type.
+	Type string `json:"type,omitempty"`
+
+	// Optional. Message identifier that is unique to the source node.
+	MsgID int `json:"msg_id,omitempty"`
+
+	// Optional. For request/response, the msg_id of the request.
+	InReplyTo int `json:"in_reply_to,omitempty"`
+
+	// Error code, if an error occurred.
+	Code int `json:"code,omitempty"`
+
+	// Error message, if an error occurred.
+	Text string `json:"text,omitempty"`
 }
 
 // InitMessageBody represents the message body for the "init" message.
@@ -292,80 +337,3 @@ type InitMessageBody struct {
 
 // HandlerFunc is the function signature for a message handler.
 type HandlerFunc func(msg Message) error
-
-// RPC error code constants.
-const (
-	Timeout                = 0
-	NotSupported           = 10
-	TemporarilyUnavailable = 11
-	MalformedRequest       = 12
-	Crash                  = 13
-	Abort                  = 14
-	KeyDoesNotExist        = 20
-	KeyAlreadyExists       = 21
-	PreconditionFailed     = 22
-	TxnConflict            = 30
-)
-
-// ErrorCodeText returns the text representation of an error code.
-func ErrorCodeText(code int) string {
-	switch code {
-	case Timeout:
-		return "Timeout"
-	case NotSupported:
-		return "NotSupported"
-	case TemporarilyUnavailable:
-		return "TemporarilyUnavailable"
-	case MalformedRequest:
-		return "MalformedRequest"
-	case Crash:
-		return "Crash"
-	case Abort:
-		return "Abort"
-	case KeyDoesNotExist:
-		return "KeyDoesNotExist"
-	case KeyAlreadyExists:
-		return "KeyAlreadyExists"
-	case PreconditionFailed:
-		return "PreconditionFailed"
-	case TxnConflict:
-		return "TxnConflict"
-	default:
-		return fmt.Sprintf("ErrorCode<%d>", code)
-	}
-}
-
-// RPCError represents a Maelstrom RPC error.
-type RPCError struct {
-	code int
-	text string
-}
-
-// NewRPCError returns a new instance of RPCError.
-func NewRPCError(code int, text string) *RPCError {
-	return &RPCError{
-		code: code,
-		text: text,
-	}
-}
-
-// Error returns a string-formatted error message.
-func (e *RPCError) Error() string {
-	return fmt.Sprintf("RPCError(%s, %q)", ErrorCodeText(e.code), e.text)
-}
-
-// MarshalJSON marshals the error into JSON format.
-func (e *RPCError) MarshalJSON() ([]byte, error) {
-	return json.Marshal(rpcErrorJSON{
-		Type: "error",
-		Code: e.code,
-		Text: e.text,
-	})
-}
-
-// rpcErrorJSON is a struct for marshaling an RPCError to JSON.
-type rpcErrorJSON struct {
-	Type string `json:"type,omitempty"`
-	Code int    `json:"code,omitempty"`
-	Text string `json:"text,omitempty"`
-}
