@@ -16,6 +16,7 @@
             [maelstrom.workload [broadcast :as broadcast]
                                 [echo :as echo]
                                 [kafka :as kafka]
+                                [lock :as lock]
                                 [g-set :as g-set]
                                 [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
@@ -38,6 +39,7 @@
   {:broadcast       broadcast/workload
    :echo            echo/workload
    :kafka           kafka/workload
+   :lock            lock/workload
    :g-set           g-set/workload
    :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload

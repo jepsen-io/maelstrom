@@ -27,6 +27,7 @@ messages that you'll need to handle.
 - [G-set](#workload-g-set)
 - [Kafka](#workload-kafka)
 - [Lin-kv](#workload-lin-kv)
+- [Lock](#workload-lock)
 - [Pn-counter](#workload-pn-counter)
 - [Txn-list-append](#workload-txn-list-append)
 - [Txn-rw-register](#workload-txn-rw-register)
@@ -55,9 +56,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "topology_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "topology_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -75,9 +74,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "broadcast_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "broadcast_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -96,7 +93,7 @@ Response:
 ```clj
 {:type (eq "read_ok"),
  :messages [Any],
- #schema.core.OptionalKey{:k :msg_id} Int,
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -122,10 +119,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "echo_ok"),
- :echo Any,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "echo_ok"), :echo Any, {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -152,9 +146,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -173,10 +165,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"),
- :value Int,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "read_ok"), :value Int, {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -200,9 +189,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -221,10 +208,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"),
- :value [Any],
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "read_ok"), :value [Any], {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -269,14 +253,38 @@ transactions.
 
 If we skip over an offset that we know exists, we call that a *skip*. Like
 nonmonotonic errors, a skip error can be internal (in a single transaction or
-poll) or external (between two transactions).
+poll) or external (between two transactions). For example, here is a
+poll-skip anomaly:
 
-In order to prevent these anomalies, each server should track each client's
-offsets for each key. When a client issues an `assign` operation which
-assigns a new key, the client's offset for that key can change
-arbitrarily--most likely, it should be set to the committed offset for that
-key. Since we expect the offset to change on assign, external nonmonotonic
-and skip errors are not tracked across `assign` operations. 
+```edn
+{:key "56",
+:delta 3,
+:skipped (7 8),
+:ops [#jepsen.history.Op{:index 3820,
+:time 4650651388,
+:type :ok,
+:process 0,
+:f :poll,
+:value [[:poll {"56" [[4 5] [5 6]]}]]}
+#jepsen.history.Op{:index 3848,
+:time 4691738701,
+:type :ok,
+:process 0,
+:f :poll,
+:value [[:poll {"56" [[8 9]]}]]}]}
+```
+
+Here a single client (process 0) performed two polls in succession, both of
+which observed key "56". The first poll observed offsets 4 and 5 (with
+messages 5 and 6). The second poll observed offset 8, with message 9. The
+client unexpectedly jumped three offsets ahead, skipping messages 7 and 8.
+
+The Jepsen client performs `:assign` operations, which is analogous to the
+Kafka client's `assign`: it picks a new set of keys and offsets for
+successive `poll` operations. On assign, the client fetches committed offsets
+from the server and begins polling from those positions. Since we expect the
+offset to change on assign, external nonmonotonic and skip errors are not
+tracked across `assign` operations. 
 
 ### RPC: Send! 
 
@@ -298,7 +306,7 @@ Response:
 ```clj
 {:type (eq "send_ok"),
  :offset (named Int "offset"),
- #schema.core.OptionalKey{:k :msg_id} Int,
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -344,13 +352,9 @@ Response:
 {:type (eq "poll_ok"),
  :msgs
  {(named Str "key")
-  [[#schema.core.One{:schema (named Int "offset"),
-                     :optional? false,
-                     :name "offset"}
-    #schema.core.One{:schema (named Any "msg"),
-                     :optional? false,
-                     :name "msg"}]]},
- #schema.core.OptionalKey{:k :msg_id} Int,
+  [[{:schema (named Int "offset"), :optional? false, :name "offset"}
+    {:schema (named Any "msg"), :optional? false, :name "msg"}]]},
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -381,9 +385,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "commit_offsets_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "commit_offsets_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -407,7 +409,7 @@ Response:
 ```clj
 {:type (eq "list_committed_offsets_ok"),
  :offsets {(named Str "key") (named Int "offset")},
- #schema.core.OptionalKey{:k :msg_id} Int,
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -432,10 +434,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"),
- :value Any,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "read_ok"), :value Any, {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -454,9 +453,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "write_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "write_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -475,9 +472,48 @@ Request:
 Response:
 
 ```clj
-{:type (eq "cas_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "cas_ok"), {:k :msg_id} Int, :in_reply_to Int}
+```
+
+
+
+## Workload: Lock 
+
+A distributed lock workload: sends lock and unlock messages. 
+
+### RPC: Lock! 
+
+Clients send `lock` messages to servers. Servers should respond with
+`lock_ok` messages when the lock is granted. 
+
+Request:
+
+```clj
+{:type (eq "lock"), :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "lock_ok"), {:k :msg_id} Int, :in_reply_to Int}
+```
+
+
+### RPC: Unlock! 
+
+Clients send `unlock` messages to servers. Servers should respond with
+`unlock_ok` messages acking that the lock is released 
+
+Request:
+
+```clj
+{:type (eq "unlock"), :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "unlock_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -504,9 +540,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"),
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -525,10 +559,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"),
- :value Int,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "read_ok"), :value Int, {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
@@ -620,7 +651,7 @@ Response:
  [(either
    [(one (eq "r") "f") (one Any "k") (one [Any] "v")]
    [(one (eq "append") "f") (one Any "k") (one Any "v")])],
- #schema.core.OptionalKey{:k :msg_id} Int,
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -716,7 +747,7 @@ Response:
  [(either
    [(one (eq "r") "f") (one Any "k") (one Any "v")]
    [(one (eq "w") "f") (one Any "k") (one Any "v")])],
- #schema.core.OptionalKey{:k :msg_id} Int,
+ {:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -761,10 +792,7 @@ Request:
 Response:
 
 ```clj
-{:type (eq "generate_ok"),
- :id Any,
- #schema.core.OptionalKey{:k :msg_id} Int,
- :in_reply_to Int}
+{:type (eq "generate_ok"), :id Any, {:k :msg_id} Int, :in_reply_to Int}
 ```
 
 
