@@ -2,4 +2,4 @@
 
 # A small wrapper script for invoking the Maelstrom jar, with arguments.
 
-exec java -Djava.awt.headless=true -jar $(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/maelstrom.jar "$@"
+exec java -Djava.awt.headless=true -jar "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/maelstrom.jar" "$@"
