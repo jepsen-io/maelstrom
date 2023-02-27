@@ -269,14 +269,38 @@ transactions.
 
 If we skip over an offset that we know exists, we call that a *skip*. Like
 nonmonotonic errors, a skip error can be internal (in a single transaction or
-poll) or external (between two transactions).
+poll) or external (between two transactions). For example, here is a
+poll-skip anomaly:
 
-In order to prevent these anomalies, each server should track each client's
-offsets for each key. When a client issues an `assign` operation which
-assigns a new key, the client's offset for that key can change
-arbitrarily--most likely, it should be set to the committed offset for that
-key. Since we expect the offset to change on assign, external nonmonotonic
-and skip errors are not tracked across `assign` operations. 
+```edn
+{:key "56",
+:delta 3,
+:skipped (7 8),
+:ops [#jepsen.history.Op{:index 3820,
+:time 4650651388,
+:type :ok,
+:process 0,
+:f :poll,
+:value [[:poll {"56" [[4 5] [5 6]]}]]}
+#jepsen.history.Op{:index 3848,
+:time 4691738701,
+:type :ok,
+:process 0,
+:f :poll,
+:value [[:poll {"56" [[8 9]]}]]}]}
+```
+
+Here a single client (process 0) performed two polls in succession, both of
+which observed key "56". The first poll observed offsets 4 and 5 (with
+messages 5 and 6). The second poll observed offset 8, with message 9. The
+client unexpectedly jumped three offsets ahead, skipping messages 7 and 8.
+
+The Jepsen client performs `:assign` operations, which is analogous to the
+Kafka client's `assign`: it picks a new set of keys and offsets for
+successive `poll` operations. On assign, the client fetches committed offsets
+from the server and begins polling from those positions. Since we expect the
+offset to change on assign, external nonmonotonic and skip errors are not
+tracked across `assign` operations. 
 
 ### RPC: Send! 
 
