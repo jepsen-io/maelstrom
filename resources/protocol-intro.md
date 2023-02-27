@@ -100,6 +100,16 @@ include it as the `src` of any message it sends.
 The `node_ids` field lists all nodes in the cluster, including the recipient.
 All nodes receive an identical list; you may use its order if you like.
 
+In response to the `init` message, each node must respond with a message of
+type `init_ok`.
+
+```json
+{
+  "type":        "init_ok",
+  "in_reply_to": 1
+}
+```
+
 ## Errors
 
 In response to a Maelstrom RPC request, a node may respond with an *error*
