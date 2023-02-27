@@ -1,4 +1,4 @@
-(defproject maelstrom "0.2.3-SNAPSHOT"
+(defproject maelstrom "0.2.3"
   :description "A test bench for writing toy distributed systems"
   :url "https://github.com/jepsen-io/maelstrom"
   :license {:name "Eclipse Public License"
@@ -21,4 +21,5 @@
                  [prismatic/schema "1.4.1"]
                  ; Random distributions
                  [incanter/incanter-core "1.9.3"]
-                 ])
+                 ]
+  :profiles {:uberjar {:aot [maelstrom.core]}})
