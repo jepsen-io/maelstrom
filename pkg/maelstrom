@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # A small wrapper script for invoking the Maelstrom jar, with arguments.
 
