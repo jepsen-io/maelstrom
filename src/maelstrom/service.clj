@@ -169,6 +169,7 @@
                      ; Pick some index to interact with
                      index        (-> last-index
                                       (- client-index)
+                                      inc
                                       rand-int
                                       (+ client-index))
                      _ (assert (<= client-index index last-index))
