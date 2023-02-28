@@ -157,6 +157,16 @@ SSH options are unused; Maelstrom runs entirely on the local node.
 
 ## Troubleshooting
 
+### Running ./maelstrom complains it's missing maelstrom.jar
+
+You probably cloned this repository or downloaded the source and didn't compile
+it. Download the compiled release tarball instead; you'll find it on the GitHub
+release page.
+
+If you want to run directly from source, you'll need the
+[Leinignen](https://leiningen.org/`) build system. Instead of `./maelstrom
+...`, run `lein run ...`.
+
 ### Raft node processes still alive after maelstrom run
 
 You may find that node processes maelstrom starts are not terminating at the end of a run as expected. To address this, make sure that if the process passed as `--bin` forks off a new process, it also handles the process' termination.
