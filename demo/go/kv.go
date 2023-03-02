@@ -61,6 +61,21 @@ func (kv *KV) Read(ctx context.Context, key string) (any, error) {
 	}
 }
 
+// ReadStruct reads the value of a key in the key/value store and store it in the value pointed by v.
+func (kv *KV) ReadStruct(ctx context.Context, key string, v any) error {
+	resp, err := kv.node.SyncRPC(ctx, kv.typ, kvReadMessageBody{
+		MessageBody: MessageBody{Type: "read"},
+		Key:         key,
+	})
+	if err != nil {
+		return err
+	}
+
+	var body kvReadOKMessageBody
+	body.Value = v
+	return json.Unmarshal(resp.Body, &body)
+}
+
 // ReadInt reads the value of a key in the key/value store as an int.
 func (kv *KV) ReadInt(ctx context.Context, key string) (int, error) {
 	v, err := kv.Read(ctx, key)
