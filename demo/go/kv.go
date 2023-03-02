@@ -38,10 +38,7 @@ func NewLWWKV(node *Node) *KV { return NewKV(LWWKV, node) }
 // Read returns the value for a given key in the key/value store.
 // Returns an *RPCError error with a KeyDoesNotExist code if the key does not exist.
 func (kv *KV) Read(ctx context.Context, key string) (any, error) {
-	resp, err := kv.node.SyncRPC(ctx, kv.typ, kvReadMessageBody{
-		MessageBody: MessageBody{Type: "read"},
-		Key:         key,
-	})
+	resp, err := kv.read(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -62,11 +59,9 @@ func (kv *KV) Read(ctx context.Context, key string) (any, error) {
 }
 
 // ReadStruct reads the value of a key in the key/value store and store it in the value pointed by v.
+// Returns an *RPCError error with a KeyDoesNotExist code if the key does not exist.
 func (kv *KV) ReadStruct(ctx context.Context, key string, v any) error {
-	resp, err := kv.node.SyncRPC(ctx, kv.typ, kvReadMessageBody{
-		MessageBody: MessageBody{Type: "read"},
-		Key:         key,
-	})
+	resp, err := kv.read(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -107,6 +102,17 @@ func (kv *KV) CompareAndSwap(ctx context.Context, key string, from, to any, crea
 		CreateIfNotExists: createIfNotExists,
 	})
 	return err
+}
+
+func (kv *KV) read(ctx context.Context, key string) (Message, error) {
+	resp, err := kv.node.SyncRPC(ctx, kv.typ, kvReadMessageBody{
+		MessageBody: MessageBody{Type: "read"},
+		Key:         key,
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	return resp, nil
 }
 
 // kvReadMessageBody represents the body for the KV "read" message.
