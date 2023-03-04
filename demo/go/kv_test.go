@@ -22,7 +22,7 @@ func TestKVReadStruct(t *testing.T) {
 		errorCh := make(chan error)
 		go func() {
 			var p testPayload
-			err := kv.ReadStruct(context.Background(), "foo", &p)
+			err := kv.ReadInto(context.Background(), "foo", &p)
 			if err != nil {
 				errorCh <- err
 				return
@@ -60,7 +60,7 @@ func TestKVReadStruct(t *testing.T) {
 
 		errorCh := make(chan error)
 		go func() {
-			err := kv.ReadStruct(context.Background(), "foo", nil)
+			err := kv.ReadInto(context.Background(), "foo", nil)
 			if err != nil {
 				errorCh <- err
 				return

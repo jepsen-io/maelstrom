@@ -58,9 +58,9 @@ func (kv *KV) Read(ctx context.Context, key string) (any, error) {
 	}
 }
 
-// ReadStruct reads the value of a key in the key/value store and store it in the value pointed by v.
+// ReadInto reads the value of a key in the key/value store and store it in the value pointed by v.
 // Returns an *RPCError error with a KeyDoesNotExist code if the key does not exist.
-func (kv *KV) ReadStruct(ctx context.Context, key string, v any) error {
+func (kv *KV) ReadInto(ctx context.Context, key string, v any) error {
 	resp, err := kv.read(ctx, key)
 	if err != nil {
 		return err
