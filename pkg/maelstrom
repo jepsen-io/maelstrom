@@ -2,6 +2,9 @@
 
 # A small wrapper script for invoking the Maelstrom jar, with arguments.
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+THIS=`basename "$0"`
+
+# Account for users who want to symlink this script into their PATH
+SCRIPT_DIR=$(dirname $(realpath $THIS))
 
 exec java -Djava.awt.headless=true -jar "${SCRIPT_DIR}/lib/maelstrom.jar" "$@"
