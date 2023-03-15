@@ -8,7 +8,7 @@ server.
 
 ### JDK
 
-To run Maelstrom, you'll need a JDK (Java Development Kit), version 1.8 or
+To run Maelstrom, you'll need a JDK (Java Development Kit), version 11 or
 higher. If you don't have a JDK yet, you can download one from
 [OpenJDK](https://adoptopenjdk.net/), or use your system's package manager:
 e.g. `apt install openjdk-17-jdk`.
