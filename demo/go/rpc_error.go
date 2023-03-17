@@ -2,6 +2,7 @@ package maelstrom
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -47,14 +48,13 @@ func ErrorCodeText(code int) string {
 	}
 }
 
-// ErrorCode returns the error code from err. Returns -1 if err is not an *RPCError.
+// ErrorCode returns the error code from err. Returns -1 if err does not have an *RPCError.
 func ErrorCode(err error) int {
-	switch err := err.(type) {
-	case *RPCError:
-		return err.Code
-	default:
-		return -1
+	var rpc *RPCError
+	if errors.As(err, &rpc) {
+		return rpc.Code
 	}
+	return -1
 }
 
 // RPCError represents a Maelstrom RPC error.
