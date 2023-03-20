@@ -1,6 +1,7 @@
 package maelstrom_test
 
 import (
+	"fmt"
 	"testing"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
@@ -32,5 +33,17 @@ func TestErrorCodeText(t *testing.T) {
 func TestRPCError_Error(t *testing.T) {
 	if got, want := maelstrom.NewRPCError(maelstrom.Crash, "foo").Error(), `RPCError(Crash, "foo")`; got != want {
 		t.Fatalf("error=%s, want %s", got, want)
+	}
+}
+
+func TestRPCError_ErrorCode(t *testing.T) {
+	var err error = maelstrom.NewRPCError(maelstrom.Crash, "foo")
+	if maelstrom.ErrorCode(err) != maelstrom.Crash {
+		t.Fatalf("error=%d, want %d", maelstrom.ErrorCode(err), maelstrom.Crash)
+	}
+
+	err = fmt.Errorf("foo: %w", err)
+	if maelstrom.ErrorCode(err) != maelstrom.Crash {
+		t.Fatalf("error=%d, want %d", maelstrom.ErrorCode(err), maelstrom.Crash)
 	}
 }
