@@ -116,7 +116,8 @@ In response to a Maelstrom RPC request, a node may respond with an *error*
 message, whose `body` is a JSON object like so:
 
 ```json
-{"type":        "error",
+{
+ "type":        "error",
  "in_reply_to": 5,
  "code":        11,
  "text":        "Node n5 is waiting for quorum and cannot service requests yet"
