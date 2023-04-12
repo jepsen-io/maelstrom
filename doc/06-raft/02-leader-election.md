@@ -498,7 +498,7 @@ Sent {:dest=>"n1", :src=>"n2", :body=>{:type=>"request_vote", :term=>1, :candida
 Became candidate for term 1
 Received {:dest=>"n2", :src=>"n1", :body=>{:type=>"request_vote", :term=>1, :candidate_id=>"n1", :last_log_index=>1, :last_log_term=>0, :msg_id=>2}, :id=>9}
 Already voted for n2; not granting vote.
-``
+```
 
 Ah, so this is a bit of a problem. Every node wakes up exactly every 1 seconds
 to run their election process, which means they all tend to run elections
