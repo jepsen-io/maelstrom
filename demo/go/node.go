@@ -26,7 +26,7 @@ type Node struct {
 	// Stdin is for reading messages in from the Maelstrom network.
 	Stdin io.Reader
 
-	// Stdin is for writing messages out to the Maelstrom network.
+	// Stdout is for writing messages out to the Maelstrom network.
 	Stdout io.Writer
 }
 
