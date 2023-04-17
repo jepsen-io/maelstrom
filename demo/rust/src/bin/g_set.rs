@@ -61,7 +61,7 @@ impl Node for Handler {
                         let s = h0.s.lock().unwrap();
                         for n in r0.neighbours() {
                             let msg = Request::ReplicateFull { value: to_seq(&s) };
-                            drop(r0.send_async(n.to_string(), msg));
+                            drop(r0.send_async(n, msg));
                         }
                     }
                 });

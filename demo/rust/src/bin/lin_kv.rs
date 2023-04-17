@@ -28,20 +28,18 @@ struct Handler {
 #[async_trait]
 impl Node for Handler {
     async fn process(&self, runtime: Runtime, req: Message) -> Result<()> {
+        let (ctx, _handler) = Context::new();
         let msg: Result<Request> = req.body.as_obj();
         match msg {
             Ok(Request::Read { key }) => {
-                let (ctx, _handler) = Context::new();
                 let value = self.s.get(ctx, key.to_string()).await?;
                 return runtime.reply(req, Request::ReadOk { value }).await;
             }
             Ok(Request::Write { key, value }) => {
-                let (ctx, _handler) = Context::new();
                 self.s.put(ctx, key.to_string(), value).await?;
                 return runtime.reply(req, Request::WriteOk {}).await;
             }
             Ok(Request::Cas { key, from, to, put }) => {
-                let (ctx, _handler) = Context::new();
                 self.s.cas(ctx, key.to_string(), from, to, put).await?;
                 return runtime.reply(req, Request::CasOk {}).await;
             }
