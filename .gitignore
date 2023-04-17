@@ -17,3 +17,4 @@ store/
 .DS_Store
 .idea
 /demo/rust/target
+__pycache__/
