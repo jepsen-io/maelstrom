@@ -20,7 +20,7 @@
   :doc       "The client's request did not conform to the server's expectations, and could not possibly have been processed."}
  {:code      13
   :name      :crash
-  :doc       "Indicates that some kind of general, indefinite error occurred. Use this as a catch-all for errors you can't otherwise categorize, or as a starting point for your error handler: it's safe to return `internal-error` for every problem by default, then add special cases for more specific errors later."}
+  :doc       "Indicates that some kind of general, indefinite error occurred. Use this as a catch-all for errors you can't otherwise categorize, or as a starting point for your error handler: it's safe to return `crash` for every problem by default, then add special cases for more specific errors later."}
  {:code      14
   :name      :abort
   :definite? true
