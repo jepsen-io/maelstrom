@@ -94,7 +94,7 @@ like so:
 ```
 
 The `node_id` field indicates the ID of the node which is receiving this
-message: here, the node ID is "n1". Your node should remember this ID and
+message: here, the node ID is "n3". Your node should remember this ID and
 include it as the `src` of any message it sends.
 
 The `node_ids` field lists all nodes in the cluster, including the recipient.
@@ -116,7 +116,8 @@ In response to a Maelstrom RPC request, a node may respond with an *error*
 message, whose `body` is a JSON object like so:
 
 ```json
-{"type":        "error",
+{
+ "type":        "error",
  "in_reply_to": 5,
  "code":        11,
  "text":        "Node n5 is waiting for quorum and cannot service requests yet"
