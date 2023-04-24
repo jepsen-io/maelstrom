@@ -14,3 +14,7 @@ store/
 /.nrepl-port
 .hgignore
 .hg/
+.DS_Store
+.idea
+/demo/rust/target
+__pycache__/

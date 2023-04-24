@@ -1,0 +1,34 @@
+[package]
+authors = ["Ivan Prisyazhnyy <john.koepi@gmail.com>"]
+categories = ["asynchronous", "concurrency", "network-programming", "distributed-systems", "simulation"]
+description = "Maelstrom Rust node framework"
+edition = "2021"
+keywords = ["maelstrom", "fly-io", "distributed-systems", "testing"]
+readme = "README.md"
+repository = "https://github.com/jepsen-io/maelstrom"
+version = "0.1.0"
+name = "maelstrom-rust-demo"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1.68"
+env_logger = "0.10.0"
+log = "0.4.17"
+serde = { version = "1.0.159", features = ["derive"] }
+serde_json = "1.0.95"
+tokio = { version = "1.27.0", features = ["full"] }
+tokio-context = "0.1.3"
+maelstrom-node="0.1.6"
+
+[[bin]]
+name = "echo"
+
+[[bin]]
+name = "broadcast"
+
+[[bin]]
+name = "lin_kv"
+
+[[bin]]
+name = "g_set"
