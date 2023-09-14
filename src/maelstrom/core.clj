@@ -139,7 +139,7 @@
     :missing "Expected a --bin PATH_TO_BINARY to test"]
 
    ["-w" "--workload NAME" "What workload to run."
-    :default "lin-kv"
+    :default  :lin-kv
     :parse-fn keyword
     :validate [workloads (cli/one-of workloads)]]
    ])
