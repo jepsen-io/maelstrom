@@ -155,6 +155,25 @@ For transactional tests, you can control transaction generation using
 
 SSH options are unused; Maelstrom runs entirely on the local node.
 
+<!--
+
+TODO: Once there's an "official" Docker image, add official image link here and uncomment these docs:
+
+### Docker Container Setup
+
+If you want to build the Docker container, you can run:
+```sh
+docker build -t maelstrom:latest .
+```
+
+And then you can run the CLI with:
+
+```sh
+docker run maelstrom:latest
+```
+
+-->
+
 ## Troubleshooting
 
 ### Running ./maelstrom complains it's missing maelstrom.jar
