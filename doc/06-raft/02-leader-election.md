@@ -586,7 +586,7 @@ And we'll need a `become_leader` transition:
 
 ```rb
   # Become a leader
-  def become_leader
+  def become_leader!
     @lock.synchronize do
       unless @state == :candidate
         raise "Should be a candidate!"
@@ -716,7 +716,7 @@ Now, we'll have a periodic task to step down leaders once their deadline is up.
     # Leader stepdown thread
     @node.every 0.1 do
       @lock.synchronize do
-        if @state == leader and @step_down_deadline < Time.now
+        if @state == :leader and @step_down_deadline < Time.now
           @node.log "Stepping down: haven't received any acks recently"
           become_follower!
         end
