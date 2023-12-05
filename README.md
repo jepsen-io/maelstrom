@@ -166,7 +166,7 @@ it. Download the compiled release tarball instead; you'll find it on the GitHub
 release page.
 
 If you want to run directly from source, you'll need the
-[Leinignen](https://leiningen.org/`) build system. Instead of `./maelstrom
+[Leiningen](https://leiningen.org) build system. Instead of `./maelstrom
 ...`, run `lein run ...`.
 
 ### Raft node processes still alive after maelstrom run

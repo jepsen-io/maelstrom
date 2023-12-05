@@ -14,36 +14,7 @@ $ maelstrom test -w echo --bin ./target/debug/examples/echo --node-count 1 --tim
 
 implementation:
 
-```rust
-use async_trait::async_trait;
-use maelstrom::protocol::Message;
-use maelstrom::{Node, Result, Runtime};
-use std::sync::Arc;
-
-pub(crate) fn main() -> Result<()> {
-    Runtime::init(try_main())
-}
-
-async fn try_main() -> Result<()> {
-    let handler = Arc::new(Handler::default());
-    Runtime::new().with_handler(handler).run().await
-}
-
-#[derive(Clone, Default)]
-struct Handler {}
-
-#[async_trait]
-impl Node for Handler {
-    async fn process(&self, runtime: Runtime, req: Message) -> Result<()> {
-        if req.get_type() == "echo" {
-            let echo = req.body.clone().with_type("echo_ok");
-            return runtime.reply(req, echo).await;
-        }
-
-        done(runtime, message)
-    }
-}
-```
+[echo.rs](./src/bin/echo.rs)
 
 spec:
 
@@ -269,21 +240,21 @@ struct Handler {}
 impl Node for Handler {
     async fn process(&self, runtime: Runtime, req: Message) -> Result<()> {
         let (mut ctx, _handler) = Context::with_timeout(Duration::from_secs(1));
-        
+
         // 1.
         runtime.call_async(node, msg.clone());
-        
+
         // 2. put it into runtime.spawn(async move { ... }) if needed
         let res: RPCResult = runtime.rpc(node, msg.clone()).await?;
         let msg: Result<Message> = res.await;
-        
+
         // 3. put it into runtime.spawn(async move { ... }) if needed
         let mut res: RPCResult = runtime.rpc(node, msg.clone()).await?;
         let msg: Message = res.done_with(ctx).await?;
 
         // 4. put it into runtime.spawn(async move { ... }) if needed
         let msg = runtime.call(ctx, node, msg.clone()).await?;
-        
+
         // 5. async send variant
         //    spawn into tokio (instead of runtime) to not to wait
         //    until it is completed, as it will never be.
@@ -299,7 +270,7 @@ impl Node for Handler {
                 }
             }
         });
-    
+
         return runtime.reply_ok(req).await;
     }
 }
