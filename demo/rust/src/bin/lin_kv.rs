@@ -33,15 +33,15 @@ impl Node for Handler {
         match msg {
             Ok(Request::Read { key }) => {
                 let value = self.s.get(ctx, key.to_string()).await?;
-                return runtime.reply(req, Request::ReadOk { value }).await;
+                return runtime.reply(req, Response::ReadOk { value }).await;
             }
             Ok(Request::Write { key, value }) => {
                 self.s.put(ctx, key.to_string(), value).await?;
-                return runtime.reply(req, Request::WriteOk {}).await;
+                return runtime.reply(req, Response::WriteOk {}).await;
             }
             Ok(Request::Cas { key, from, to, put }) => {
                 self.s.cas(ctx, key.to_string(), from, to, put).await?;
-                return runtime.reply(req, Request::CasOk {}).await;
+                return runtime.reply(req, Response::CasOk {}).await;
             }
             _ => done(runtime, req),
         }
@@ -58,14 +58,10 @@ enum Request {
     Read {
         key: u64,
     },
-    ReadOk {
-        value: i64,
-    },
     Write {
         key: u64,
         value: i64,
     },
-    WriteOk {},
     Cas {
         key: u64,
         from: i64,
@@ -73,5 +69,14 @@ enum Request {
         #[serde(default, rename = "create_if_not_exists")]
         put: bool,
     },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+enum Response {
+    ReadOk {
+        value: i64,
+    },
+    WriteOk {},
     CasOk {},
 }

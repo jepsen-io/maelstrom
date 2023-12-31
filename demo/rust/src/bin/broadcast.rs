@@ -37,7 +37,7 @@ impl Node for Handler {
         match msg {
             Ok(Request::Read {}) => {
                 let data = self.snapshot();
-                let msg = Request::ReadOk { messages: data };
+                let msg = Response::ReadOk { messages: data };
                 return runtime.reply(req, msg).await;
             }
             Ok(Request::Broadcast { message: element }) => {
@@ -81,13 +81,18 @@ impl Handler {
 enum Request {
     Init {},
     Read {},
-    ReadOk {
-        messages: Vec<u64>,
-    },
     Broadcast {
         message: u64,
     },
     Topology {
         topology: HashMap<String, Vec<String>>,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+enum Response {
+    ReadOk {
+        messages: Vec<u64>,
     },
 }

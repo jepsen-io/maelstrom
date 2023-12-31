@@ -33,11 +33,11 @@ impl Node for Handler {
         match msg {
             Ok(Request::Read {}) => {
                 let data = to_seq(&self.s.lock().unwrap());
-                return runtime.reply(req, Request::ReadOk { value: data }).await;
+                return runtime.reply(req, Response::ReadOk { value: data }).await;
             }
             Ok(Request::Add { element }) => {
                 self.s.lock().unwrap().insert(element);
-                return runtime.reply(req, Request::AddOk {}).await;
+                return runtime.reply(req, Response::AddOk {}).await;
             }
             Ok(Request::ReplicateOne { element }) => {
                 self.s.lock().unwrap().insert(element);
@@ -60,7 +60,7 @@ impl Node for Handler {
                         debug!("emit replication signal");
                         let s = h0.s.lock().unwrap();
                         for n in r0.neighbours() {
-                            let msg = Request::ReplicateFull { value: to_seq(&s) };
+                            let msg = Response::ReplicateFull { value: to_seq(&s) };
                             drop(r0.send_async(n, msg));
                         }
                     }
@@ -81,9 +81,15 @@ fn to_seq(s: &MutexGuard<HashSet<i64>>) -> Vec<i64> {
 enum Request {
     Init {},
     Read {},
-    ReadOk { value: Vec<i64> },
     Add { element: i64 },
-    AddOk {},
     ReplicateOne { element: i64 },
+    ReplicateFull { value: Vec<i64> },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+enum Response {
+    ReadOk { value: Vec<i64> },
+    AddOk {},
     ReplicateFull { value: Vec<i64> },
 }
