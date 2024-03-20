@@ -3,15 +3,15 @@ package main
 type Message struct {
 	Type      string   `json:"type,omitempty"`
 	MsgId     int      `json:"msg_id,omitempty"`
-	InReplyTo string   `json:"in_reply_to,omitempty"`
+	InReplyTo int      `json:"in_reply_to,omitempty"`
 	Key       string   `json:"key,omitempty"`
-	Value     string   `json:"value,omitempty"`
+	Value     int      `json:"value,omitempty"`
 	NodeId    string   `json:"node_id,omitempty"`
 	NodeIds   []string `json:"node_ids,omitempty"`
 	Code      int      `json:"code,omitempty"`
 	Text      string   `json:"text,omitempty"`
-	From      string   `json:"from,omitempty"`
-	To        string   `json:"to,omitempty"`
+	From      int      `json:"from,omitempty"`
+	To        int      `json:"to,omitempty"`
 }
 
 type Body struct {
@@ -35,7 +35,7 @@ type Body struct {
 type Msg struct {
 	src  string
 	dest string
-	body Body
+	body MsgBody
 }
 
 type KVMsg struct {
@@ -43,8 +43,24 @@ type KVMsg struct {
 	body Message
 }
 
-type Op struct {
-	Type  string
-	Key   string
-	Value int
+type MsgBodyType string
+
+const (
+	readMsgBodyType   MsgBodyType = "read"
+	readOkMsgBodyType MsgBodyType = "read_ok"
+	initMsgBodyType   MsgBodyType = "init"
+	initOkMsgBodyType MsgBodyType = "init_ok"
+	errorMsgBodyType  MsgBodyType = "error"
+)
+
+type MsgBody struct {
+	Type      MsgBodyType
+	msgId     int
+	key       int
+	inReplyTo int
+	value     string
+	nodeId    string
+	nodeIds   []string
+	code      int
+	text      string
 }
