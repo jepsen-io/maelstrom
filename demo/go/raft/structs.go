@@ -53,14 +53,31 @@ const (
 	errorMsgBodyType  MsgBodyType = "error"
 )
 
+const (
+	requestVoteMsgBodyType MsgBodyType = "request_vote"
+)
+
 type MsgBody struct {
 	Type      MsgBodyType
-	msgId     int
+	msgId     *int
 	key       int
-	inReplyTo int
+	inReplyTo *int
 	value     string
 	nodeId    string
 	nodeIds   []string
 	code      int
 	text      string
+
+	term         int
+	leaderId     string
+	prevLogIndex int
+	prevLogTerm  int
+	entries      []Entry
+	leaderCommit int
+	success      bool
+	votedGranted bool
+
+	candidateId  string
+	lastLogIndex int
+	lastLogTerm  int
 }

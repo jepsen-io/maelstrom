@@ -7,7 +7,7 @@ import (
 
 type Entry struct {
 	term int
-	op   string
+	op   Op
 }
 
 type Log struct {
@@ -17,7 +17,6 @@ type Log struct {
 func (log *Log) init() {
 	log.Entries = []Entry{{
 		term: 0,
-		op:   "",
 	}}
 }
 
@@ -59,4 +58,10 @@ func (log *Log) fromIndex(index int) ([]Entry, error) {
 	}
 
 	return lo.Slice(log.Entries, index, len(log.Entries)+1), nil
+}
+
+func newLog() *Log {
+	log := Log{}
+	log.init()
+	return &log
 }

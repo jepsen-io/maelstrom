@@ -1,10 +1,9 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"golang.org/x/exp/maps"
+	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -45,9 +44,9 @@ type RaftNode struct {
 	matchIndex map[string]int
 
 	// Components
-	log          Log
-	net          Net
-	stateMachine KVStore
+	log          *Log
+	net          *Net
+	stateMachine *KVStore
 }
 
 func (raft *RaftNode) init() {
@@ -73,9 +72,9 @@ func (raft *RaftNode) init() {
 	raft.leaderId = ""
 
 	// Components
-	raft.log = Log{}
-	raft.net = Net{}
-	raft.stateMachine = KVStore{}
+	raft.log = newLog()
+	raft.net = newNet()
+	raft.stateMachine = newKVStore()
 }
 
 func (raft *RaftNode) otherNodes() []string {
@@ -96,7 +95,7 @@ func (raft *RaftNode) setNodeId(id string) {
 	raft.nodeId = id
 }
 
-func (raft *RaftNode) brpc(body Body, handler MsgHandler) {
+func (raft *RaftNode) brpc(body MsgBody, handler MsgHandler) {
 	// Broadcast an RPC message to all other nodes, and call handler with each response.
 	for _, nodeId := range raft.otherNodes() {
 		raft.net.rpc(nodeId, body, handler)
@@ -104,7 +103,8 @@ func (raft *RaftNode) brpc(body Body, handler MsgHandler) {
 }
 
 func (raft *RaftNode) resetElectionDeadline() {
-	raft.electionDeadline = time.Now().Unix() + int64(float64(raft.electionTimeout)*(rand.Float64()+1.0))
+	temp := int64(float64(raft.electionTimeout) * (rand.Float64() + 1.0))
+	raft.electionDeadline = time.Now().Unix() + temp
 }
 
 func (raft *RaftNode) resetStepDownDeadline() {
@@ -138,7 +138,7 @@ func (raft *RaftNode) requestVotes() error {
 	votes := map[string]bool{}
 	term := raft.currentTerm
 
-	// We vote for ourself
+	// We vote for our-self
 	votes[raft.nodeId] = true
 
 	handle := func(res Msg) {
@@ -153,7 +153,7 @@ func (raft *RaftNode) requestVotes() error {
 
 			// We have a vote for our candidacy
 			votes[res.src] = true
-			fmt.Println("have votes " + fmt.Sprint(votes))
+			log.Println("have votes " + fmt.Sprint(votes))
 
 			if majority(len(raft.nodeIds)) <= len(votes) {
 				raft.becomeLeader()
@@ -166,8 +166,8 @@ func (raft *RaftNode) requestVotes() error {
 	} else {
 		// Broadcast vote request
 		raft.brpc(
-			Body{
-				Type:         "request_vote",
+			MsgBody{
+				Type:         requestVoteMsgBodyType,
 				term:         raft.currentTerm,
 				candidateId:  raft.nodeId,
 				lastLogIndex: raft.log.size(),
@@ -185,7 +185,7 @@ func (raft *RaftNode) becomeFollower() {
 	raft.matchIndex = map[string]int{}
 	raft.leaderId = ""
 	raft.resetElectionDeadline()
-	fmt.Println("Became follower for term", raft.currentTerm)
+	log.Println("Became follower for term", raft.currentTerm)
 }
 
 func (raft *RaftNode) becomeCandidate() {
@@ -195,7 +195,7 @@ func (raft *RaftNode) becomeCandidate() {
 	raft.leaderId = ""
 	raft.resetElectionDeadline()
 	raft.resetStepDownDeadline()
-	fmt.Println("Became candidate for term", raft.currentTerm)
+	log.Println("Became candidate for term", raft.currentTerm)
 	raft.requestVotes()
 }
 
@@ -215,47 +215,18 @@ func (raft *RaftNode) becomeLeader() error {
 		matchIndex[nodeId] = 0
 	}
 	raft.resetStepDownDeadline()
-	fmt.Println("Became leader for term", raft.currentTerm)
+	log.Println("Became leader for term", raft.currentTerm)
 	return nil
-}
-
-func (raft *RaftNode) processMsg() (bool, error) {
-	// Handles a message from stdin, if one is currently available.
-	file, err := os.Stdin.Stat()
-	if err != nil {
-		return false, err
-	}
-
-	if file.Size() == 0 {
-		return false, nil
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		txt := scanner.Text()
-		fmt.Println("Received\n", txt)
-
-		var msg Message
-		if err := json.Unmarshal([]byte(txt), &msg); err != nil {
-			return false, err
-		}
-
-		if msg.InReplyTo != "" {
-
-		}
-	} else {
-		return false, nil
-	}
-	return true, nil
 }
 
 func (raft *RaftNode) stepDownOnTimeout() (bool, error) {
 	// If we haven't received any acks for a while, step down.
 	if raft.state == StateLeader && raft.stepDownDeadline < time.Now().Unix() {
-		fmt.Println("Stepping down: haven't received any acks recently")
+		log.Println("Stepping down: haven't received any acks recently")
 		raft.becomeFollower()
+		return true, nil
 	}
-	return true, nil
+	return false, nil
 }
 
 func (raft *RaftNode) replicateLog() (bool, error) {
@@ -302,7 +273,7 @@ func (raft *RaftNode) replicateLog() (bool, error) {
 
 				raft.net.rpc(
 					nodeId,
-					Body{
+					MsgBody{
 						Type:         "append_entries",
 						term:         raft.currentTerm,
 						leaderId:     raft.nodeId,
@@ -353,17 +324,22 @@ func (raft *RaftNode) advanceCommitIndex() (bool, error) {
 }
 
 func (raft *RaftNode) advanceStateMachine() (bool, error) {
-	// If we have unapplied committed entries in the log, apply one to the state machine.
+	// If we have un-applied committed entries in the log, apply one to the state machine.
 	if raft.lastApplied < raft.commitIndex {
 		// Advance the applied index and apply that op
 		raft.lastApplied += 1
-		res = raft.st
+		raft.log.get(raft.lastApplied)
+		response := raft.stateMachine.apply(raft.log.get(raft.lastApplied).op)
+		if raft.state == StateLeader {
+			// We were the leader, let's respond to the client.
+			raft.net.send(response.dest, response.body)
+		}
 	}
-	return false, nil
+	return true, nil
 }
 
 func (raft *RaftNode) main() {
-	fmt.Println("Online.")
+	log.Println("Online.")
 
 	// *************** Handle KeyboardInterrupt ******************
 	// Create a channel to receive signals.
@@ -374,37 +350,37 @@ func (raft *RaftNode) main() {
 
 	// Start a goroutine to listen for signals.
 	go func() {
-		for s := range c {
-			fmt.Println("Received signal:", s)
+		for range c {
+			log.Println("Aborted by interrupt!")
 			os.Exit(1)
 		}
 	}()
 	// *************** Handle KeyboardInterrupt ******************
 
 	for {
-		if success, err := raft.processMsg(); err != nil || success {
+		if success, err := raft.net.processMsg(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		} else if success, err := raft.stepDownOnTimeout(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		} else if success, err := raft.replicateLog(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		} else if success, err := raft.election(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		} else if success, err := raft.advanceCommitIndex(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		} else if success, err := raft.advanceStateMachine(); err != nil || success {
 			if err != nil {
-				fmt.Println("Error!", err)
+				log.Println("Error!", err)
 			}
 		}
 
@@ -412,7 +388,8 @@ func (raft *RaftNode) main() {
 	}
 }
 
-func main() {
+func newRaftNode() *RaftNode {
 	raft := RaftNode{}
-	raft.main()
+	raft.init()
+	return &raft
 }

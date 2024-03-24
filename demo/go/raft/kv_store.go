@@ -1,6 +1,8 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // WIP
 
@@ -58,9 +60,15 @@ func (kvStore *KVStore) apply(op Op) Msg {
 		}
 	}
 
-	msgBody.inReplyTo = op.MsgId
+	msgBody.inReplyTo = &op.MsgId
 	return Msg{
 		dest: op.Client,
 		body: msgBody,
 	}
+}
+
+func newKVStore() *KVStore {
+	kvStore := KVStore{}
+	kvStore.init()
+	return &kvStore
 }
