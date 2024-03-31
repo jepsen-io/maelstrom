@@ -4,24 +4,30 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"syscall"
 )
 
-type MsgHandler func(msg Msg)
+type MsgHandler func(msg Msg) error
 
 type Net struct {
-	nodeId    string                // Our local node ID
-	nextMsgId int                   // The next message ID we're going to allocate
-	handlers  map[string]MsgHandler // A map of message types to handler functions
-	callbacks map[int]MsgHandler    // A map of message IDs to response handlers
+	nodeId    string                 // Our local node ID
+	nextMsgId int                    // The next message ID we're going To allocate
+	handlers  map[MsgType]MsgHandler // A map of message types To handler functions
+	callbacks map[int]MsgHandler     // A map of message IDs To response handlers
+
+	// stdin
+	stdin io.Reader
 }
 
 func (net *Net) init() {
 	net.nodeId = ""
 	net.nextMsgId = 0
-	net.handlers = map[string]MsgHandler{}
+	net.handlers = map[MsgType]MsgHandler{}
 	net.callbacks = map[int]MsgHandler{}
+	net.stdin = os.Stdin
 }
 
 func (net *Net) setNodeId(id string) {
@@ -34,9 +40,9 @@ func (net *Net) newMsgId() int {
 	return id
 }
 
-func (net *Net) on(msgType string, handler MsgHandler) error {
+func (net *Net) on(msgType MsgType, handler MsgHandler) error {
 	// Register a callback for a message of the given type.
-	if handler, ok := net.handlers[msgType]; ok {
+	if _, ok := net.handlers[msgType]; ok {
 		return fmt.Errorf("already have a handler for message type %s", msgType)
 	} else {
 		net.handlers[msgType] = handler
@@ -47,70 +53,79 @@ func (net *Net) on(msgType string, handler MsgHandler) error {
 
 func (net *Net) sendMsg(msg Msg) {
 	// Sends a raw message object
-	log.Printf("Sent\n %v", msg)
-	jsonBytes, _ := json.MarshalIndent(msg, "", "  ")
+	jsonBytes, _ := json.Marshal(msg)
+	log.Printf("Sent\n%s", string(jsonBytes))
 	fmt.Println(string(jsonBytes))
 	os.Stdout.Sync()
 }
 
 func (net *Net) send(dest string, body MsgBody) {
-	// Sends a message to the given destination node with the given body.
+	// Sends a message To the given destination node with the given Body.
 	net.sendMsg(Msg{
-		src:  net.nodeId,
-		dest: dest,
-		body: body,
+		Src:  net.nodeId,
+		Dest: dest,
+		Body: body,
 	})
 }
 
 func (net *Net) reply(req Msg, body MsgBody) {
-	body.inReplyTo = req.body.msgId
-	net.send(req.src, body)
+	body.InReplyTo = req.Body.MsgId
+	net.send(req.Src, body)
 }
 
 func (net *Net) rpc(dest string, body MsgBody, handler MsgHandler) {
-	// Sends an RPC request to dest and handles the response with handler.
+	// Sends an RPC request To Dest and handles the response with handler.
 	msgId := net.newMsgId()
 	net.callbacks[msgId] = handler
-	body.msgId = &msgId
+	body.MsgId = &msgId
 	net.send(dest, body)
 }
 
 func (net *Net) processMsg() (bool, error) {
-	// Handles a message from stdin, if one is currently available.
-	file, err := os.Stdin.Stat()
-	if err != nil {
+	// Handles a message From stdin, if one is currently available.
+	timeout := &syscall.Timeval{Sec: 0, Usec: 0}
+	rfds := &syscall.FdSet{}
+	stdinFD := int(os.Stdin.Fd())
+
+	FD_ZERO(rfds) // reset
+	FD_SET(rfds, stdinFD)
+
+	if err := syscall.Select(1, rfds, nil, nil, timeout); err != nil {
+		fmt.Println(err)
 		return false, err
 	}
 
-	if file.Size() == 0 {
-		return false, nil
-	}
+	if FD_ISSET(rfds, stdinFD) {
+		reader := bufio.NewReader(net.stdin)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return false, err
+		}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		txt := scanner.Text()
-		log.Println("Received\n", txt)
+		log.Println("Received\n", line)
 
 		var msg Msg
-		if err := json.Unmarshal([]byte(txt), &msg); err != nil {
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
 			return false, err
 		}
 
 		var handler MsgHandler
-		if msg.body.inReplyTo != nil {
-			handler = net.callbacks[*msg.body.inReplyTo]
-			net.callbacks[*msg.body.inReplyTo] = nil
-		} else if value, ok := net.handlers[string(msg.body.Type)]; ok {
+		if msg.Body.InReplyTo != nil {
+			handler = net.callbacks[*msg.Body.InReplyTo]
+			net.callbacks[*msg.Body.InReplyTo] = nil
+		} else if value, ok := net.handlers[msg.Body.Type]; ok {
 			handler = value
 		} else {
 			return false, fmt.Errorf("No callback or handler for\n %v", msg)
 		}
 
-		handler(msg)
+		if err := handler(msg); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 
-	// nothing to process
+	// nothing To process
 	return false, nil
 }
 

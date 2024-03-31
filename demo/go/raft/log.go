@@ -7,7 +7,7 @@ import (
 
 type Entry struct {
 	term int
-	op   Op
+	op   MsgBody
 }
 
 type Log struct {
@@ -25,23 +25,20 @@ func (log *Log) get(index int) Entry {
 }
 
 func (log *Log) append(entries []Entry) {
-	// Appends multiple entries to the log.
+	// Appends multiple Entries To the log.
 	log.Entries = append(log.Entries, entries...)
 }
 
-func (log *Log) last() (Entry, error) {
+func (log *Log) last() Entry {
 	// Returns the most recent entry
-	return lo.Last(log.Entries)
+	return log.Entries[len(log.Entries)-1]
 }
 
 func (log *Log) lastTerm() int {
-	// What's the term of the last entry in the log?
-	lastEntry, err := log.last()
-	if err == nil {
-		return lastEntry.term
-	}
-
-	return 0
+	// What's the Term of the last entry in the log?
+	lastEntry := log.last()
+	return lastEntry.term
+	// return 0
 }
 
 func (log *Log) size() int {

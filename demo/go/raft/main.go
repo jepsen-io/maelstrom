@@ -1,6 +1,9 @@
 package main
 
 func main() {
-	raft := newRaftNode()
+	raft, err := newRaftNode()
+	if err != nil {
+		panic(err)
+	}
 	raft.main()
 }

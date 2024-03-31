@@ -1,83 +1,61 @@
 package main
 
-type Message struct {
-	Type      string   `json:"type,omitempty"`
-	MsgId     int      `json:"msg_id,omitempty"`
-	InReplyTo int      `json:"in_reply_to,omitempty"`
-	Key       string   `json:"key,omitempty"`
+type Msg struct {
+	Id   int     `json:"id,omitempty"`
+	Src  string  `json:"src,omitempty"`
+	Dest string  `json:"dest,omitempty"`
+	Body MsgBody `json:"body,omitempty"`
+}
+
+type MsgType string
+
+const (
+	initMsgBodyType   MsgType = "init"
+	initOkMsgBodyType MsgType = "init_ok"
+	readMsgType       MsgType = "read"
+	readOkMsgType     MsgType = "read_ok"
+	writeMsgType      MsgType = "write"
+	writeOkMsgType    MsgType = "write_ok"
+	casMsgType        MsgType = "cas"
+	casOkMsgType      MsgType = "cas_ok"
+)
+
+const (
+	requestVoteMsgType         MsgType = "request_vote"
+	requestVoteResultMsgType   MsgType = "request_vote_res"
+	appendEntriesMsgType       MsgType = "append_entries"
+	appendEntriesResultMsgType MsgType = "append_entries_res"
+	errorMsgType               MsgType = "error"
+)
+
+type MsgBody struct {
+	Type      MsgType  `json:"type"`
+	MsgId     *int     `json:"msg_id,omitempty"`
+	Key       int      `json:"key,omitempty"`
+	InReplyTo *int     `json:"in_reply_to,omitempty"`
 	Value     int      `json:"value,omitempty"`
 	NodeId    string   `json:"node_id,omitempty"`
 	NodeIds   []string `json:"node_ids,omitempty"`
 	Code      int      `json:"code,omitempty"`
 	Text      string   `json:"text,omitempty"`
-	From      int      `json:"from,omitempty"`
-	To        int      `json:"to,omitempty"`
-}
 
-type Body struct {
-	Type         string
-	term         int
-	leaderId     string
-	prevLogIndex int
-	prevLogTerm  int
-	entries      []Entry
-	leaderCommit int
-	msgId        int
-	inReplyTo    int
-	success      bool
-	votedGranted bool
+	// replicate log
+	Term         int     `json:"term,omitempty"`
+	LeaderId     string  `json:"leader_id,omitempty"`
+	PrevLogIndex int     `json:"prev_log_index,omitempty"`
+	PrevLogTerm  int     `json:"prev_log_term,omitempty"`
+	Entries      []Entry `json:"entries,omitempty"`
+	LeaderCommit int     `json:"leader_commit	,omitempty"`
+	Success      bool    `json:"success,omitempty"`
+	VotedGranted bool    `json:"vote_granted,omitempty"`
+	Client       string  `json:"client,omitempty"`
 
-	candidateId  string
-	lastLogIndex int
-	lastLogTerm  int
-}
+	// Broadcast vote request
+	CandidateId  string `json:"candidate_id,omitempty"`
+	LastLogIndex int    `json:"last_log_index,omitempty"`
+	LastLogTerm  int    `json:"last_log_term,omitempty"`
 
-type Msg struct {
-	src  string
-	dest string
-	body MsgBody
-}
-
-type KVMsg struct {
-	dest string
-	body Message
-}
-
-type MsgBodyType string
-
-const (
-	readMsgBodyType   MsgBodyType = "read"
-	readOkMsgBodyType MsgBodyType = "read_ok"
-	initMsgBodyType   MsgBodyType = "init"
-	initOkMsgBodyType MsgBodyType = "init_ok"
-	errorMsgBodyType  MsgBodyType = "error"
-)
-
-const (
-	requestVoteMsgBodyType MsgBodyType = "request_vote"
-)
-
-type MsgBody struct {
-	Type      MsgBodyType
-	msgId     *int
-	key       int
-	inReplyTo *int
-	value     string
-	nodeId    string
-	nodeIds   []string
-	code      int
-	text      string
-
-	term         int
-	leaderId     string
-	prevLogIndex int
-	prevLogTerm  int
-	entries      []Entry
-	leaderCommit int
-	success      bool
-	votedGranted bool
-
-	candidateId  string
-	lastLogIndex int
-	lastLogTerm  int
+	// state transition
+	From int `json:"from,omitempty"`
+	To   int `json:"to,omitempty"`
 }

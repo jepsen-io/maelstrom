@@ -6,64 +6,64 @@ import (
 
 // WIP
 
-// KVStore A state machine providing a key-value store.
+// KVStore A state machine providing a Key-Value store.
 type KVStore struct {
-	state map[string]string
+	state map[int]int
 }
 
 func (kvStore *KVStore) init() {
-	kvStore.state = map[string]string{}
+	kvStore.state = map[int]int{}
 }
 
-func (kvStore *KVStore) apply(op Op) Msg {
-	// Applies an op to the state machine, and returns a response message.
+func (kvStore *KVStore) apply(op MsgBody) Msg {
+	// Applies an op To the state machine, and returns a response message.
 	t := op.Type
 	k := op.Key
 
 	var msgBody MsgBody
 	// Handle state transition
-	if t == readOpType {
+	if t == readMsgType {
 		if _, ok := kvStore.state[k]; ok {
 			msgBody = MsgBody{
-				Type:  "read_ok",
-				value: kvStore.state[k],
+				Type:  readOkMsgType,
+				Value: kvStore.state[k],
 			}
 		} else {
 			msgBody = MsgBody{
-				Type:  "read_ok",
-				value: kvStore.state[k],
+				Type:  readOkMsgType,
+				Value: kvStore.state[k],
 			}
 		}
-	} else if t == writeOpType {
+	} else if t == writeMsgType {
 		kvStore.state[k] = op.Value
 		msgBody = MsgBody{
-			Type: "write_ok",
+			Type: writeOkMsgType,
 		}
-	} else if t == casOpType {
+	} else if t == casMsgType {
 		if value, ok := kvStore.state[k]; !ok {
 			msgBody = MsgBody{
-				Type: "error",
-				code: 20,
-				text: "not found",
+				Type: errorMsgType,
+				Code: 20,
+				Text: "not found",
 			}
 		} else if value != op.From {
 			msgBody = MsgBody{
-				Type: "error",
-				code: 22,
-				text: fmt.Sprintf("expected %d but had %d", op.From, value),
+				Type: errorMsgType,
+				Code: 22,
+				Text: fmt.Sprintf("expected %d but had %d", op.From, value),
 			}
 		} else {
 			kvStore.state[k] = op.To
 			msgBody = MsgBody{
-				Type: "cas_ok",
+				Type: casOkMsgType,
 			}
 		}
 	}
 
-	msgBody.inReplyTo = &op.MsgId
+	msgBody.InReplyTo = op.MsgId
 	return Msg{
-		dest: op.Client,
-		body: msgBody,
+		Dest: op.Client,
+		Body: msgBody,
 	}
 }
 
