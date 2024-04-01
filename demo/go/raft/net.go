@@ -51,33 +51,36 @@ func (net *Net) on(msgType MsgType, handler MsgHandler) error {
 	return nil
 }
 
-func (net *Net) sendMsg(msg Msg) {
+func (net *Net) sendMsg(msg any) {
 	// Sends a raw message object
 	jsonBytes, _ := json.Marshal(msg)
 	log.Printf("Sent\n%s", string(jsonBytes))
 	fmt.Println(string(jsonBytes))
-	os.Stdout.Sync()
+	//if msg.Dest == "" {
+	//	panic(string(jsonBytes))
+	//}
 }
 
-func (net *Net) send(dest string, body MsgBody) {
+func (net *Net) send(dest string, body map[string]interface{}) {
 	// Sends a message To the given destination node with the given Body.
-	net.sendMsg(Msg{
+	net.sendMsg(ResponseMsg{
 		Src:  net.nodeId,
 		Dest: dest,
 		Body: body,
 	})
 }
 
-func (net *Net) reply(req Msg, body MsgBody) {
-	body.InReplyTo = req.Body.MsgId
+func (net *Net) reply(req Msg, body map[string]interface{}) {
+	body["in_reply_to"] = req.Body.MsgId
 	net.send(req.Src, body)
 }
 
-func (net *Net) rpc(dest string, body MsgBody, handler MsgHandler) {
+func (net *Net) rpc(dest string, body map[string]interface{}, handler MsgHandler) {
 	// Sends an RPC request To Dest and handles the response with handler.
 	msgId := net.newMsgId()
 	net.callbacks[msgId] = handler
-	body.MsgId = &msgId
+	body["msg_id"] = msgId
+	log.Printf("rpc -> dest: %s, MsgId: %d, body: %v \n", dest, msgId, body)
 	net.send(dest, body)
 }
 
@@ -105,7 +108,7 @@ func (net *Net) processMsg() (bool, error) {
 		log.Println("Received\n", line)
 
 		var msg Msg
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+		if err = json.Unmarshal([]byte(line), &msg); err != nil {
 			return false, err
 		}
 
@@ -119,7 +122,10 @@ func (net *Net) processMsg() (bool, error) {
 			return false, fmt.Errorf("No callback or handler for\n %v", msg)
 		}
 
-		if err := handler(msg); err != nil {
+		if msg.Body.Type == appendEntriesMsgType {
+			log.Println("appendEntriesMsgType")
+		}
+		if err = handler(msg); err != nil {
 			return false, err
 		}
 		return true, nil

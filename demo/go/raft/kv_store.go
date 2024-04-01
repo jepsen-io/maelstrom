@@ -4,8 +4,6 @@ import (
 	"fmt"
 )
 
-// WIP
-
 // KVStore A state machine providing a Key-Value store.
 type KVStore struct {
 	state map[int]int
@@ -15,55 +13,56 @@ func (kvStore *KVStore) init() {
 	kvStore.state = map[int]int{}
 }
 
-func (kvStore *KVStore) apply(op MsgBody) Msg {
-	// Applies an op To the state machine, and returns a response message.
+func (kvStore *KVStore) apply(op MsgBody) ResponseMsg {
+	// Applies an Op To the state machine, and returns a response message.
 	t := op.Type
 	k := op.Key
 
-	var msgBody MsgBody
+	var response map[string]interface{}
 	// Handle state transition
 	if t == readMsgType {
 		if _, ok := kvStore.state[k]; ok {
-			msgBody = MsgBody{
-				Type:  readOkMsgType,
-				Value: kvStore.state[k],
+			response = map[string]interface{}{
+				"type":  readOkMsgType,
+				"value": kvStore.state[k],
 			}
 		} else {
-			msgBody = MsgBody{
-				Type:  readOkMsgType,
-				Value: kvStore.state[k],
+			response = map[string]interface{}{
+				"type": errorMsgType,
+				"code": 20,
+				"text": "not found",
 			}
 		}
 	} else if t == writeMsgType {
 		kvStore.state[k] = op.Value
-		msgBody = MsgBody{
-			Type: writeOkMsgType,
+		response = map[string]interface{}{
+			"type": writeOkMsgType,
 		}
 	} else if t == casMsgType {
 		if value, ok := kvStore.state[k]; !ok {
-			msgBody = MsgBody{
-				Type: errorMsgType,
-				Code: 20,
-				Text: "not found",
+			response = map[string]interface{}{
+				"type": errorMsgType,
+				"code": 20,
+				"text": "not found",
 			}
 		} else if value != op.From {
-			msgBody = MsgBody{
-				Type: errorMsgType,
-				Code: 22,
-				Text: fmt.Sprintf("expected %d but had %d", op.From, value),
+			response = map[string]interface{}{
+				"type": errorMsgType,
+				"code": 22,
+				"text": fmt.Sprintf("expected %d but had %d", op.From, value),
 			}
 		} else {
 			kvStore.state[k] = op.To
-			msgBody = MsgBody{
-				Type: casOkMsgType,
+			response = map[string]interface{}{
+				"type": casOkMsgType,
 			}
 		}
 	}
 
-	msgBody.InReplyTo = op.MsgId
-	return Msg{
+	response["in_reply_to"] = op.MsgId
+	return ResponseMsg{
 		Dest: op.Client,
-		Body: msgBody,
+		Body: response,
 	}
 }
 

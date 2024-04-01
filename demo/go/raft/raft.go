@@ -65,11 +65,14 @@ func (raft *RaftNode) init() error {
 	// Raft State
 	raft.state = StateNascent
 	raft.currentTerm = 0
+	raft.votedFor = ""
+	raft.commitIndex = 0
+	raft.lastApplied = 1 // index: 0 -> Op: None
+	raft.leaderId = ""   // Who do we think the leader is?
 
 	// Leader State
 	raft.nextIndex = map[string]int{}
 	raft.matchIndex = map[string]int{}
-	raft.leaderId = "" // Who do we think the leader is?
 
 	// Components
 	raft.log = newLog()
@@ -101,7 +104,7 @@ func (raft *RaftNode) setNodeId(id string) {
 	raft.net.setNodeId(id)
 }
 
-func (raft *RaftNode) brpc(body MsgBody, handler MsgHandler) {
+func (raft *RaftNode) brpc(body map[string]interface{}, handler MsgHandler) {
 	// Broadcast an RPC message To all other nodes, and call handler with each response.
 	for _, nodeId := range raft.otherNodes() {
 		raft.net.rpc(nodeId, body, handler)
@@ -150,7 +153,7 @@ func (raft *RaftNode) requestVotes() error {
 	// We vote for our-self
 	votes[raft.nodeId] = true
 
-	handle := func(res Msg) error {
+	handler := func(res Msg) error {
 		raft.resetStepDownDeadline()
 		body := res.Body
 		if err := raft.maybeStepDown(body.Term); err != nil {
@@ -167,6 +170,7 @@ func (raft *RaftNode) requestVotes() error {
 			log.Println("have votes " + fmt.Sprint(votes))
 
 			if majority(len(raft.nodeIds)) <= len(votes) {
+				// We have a majority of votes for this Term
 				if err := raft.becomeLeader(); err != nil {
 					return err
 				}
@@ -177,14 +181,14 @@ func (raft *RaftNode) requestVotes() error {
 
 	// Broadcast vote request
 	raft.brpc(
-		MsgBody{
-			Type:         requestVoteMsgType,
-			Term:         raft.currentTerm,
-			CandidateId:  raft.nodeId,
-			LastLogIndex: raft.log.size(),
-			LastLogTerm:  raft.log.lastTerm(),
+		map[string]interface{}{
+			"type":           requestVoteMsgType,
+			"term":           raft.currentTerm,
+			"candidate":      raft.nodeId,
+			"last_log_index": raft.log.size(),
+			"last_log_term":  raft.log.lastTerm(),
 		},
-		handle,
+		handler,
 	)
 	return nil
 }
@@ -223,14 +227,14 @@ func (raft *RaftNode) becomeLeader() error {
 	raft.leaderId = ""
 	raft.lastReplication = 0 // Start replicating immediately
 	// We'll start by trying To replicate our most recent entry
-	nextIndex := map[string]int{}
-	matchIndex := map[string]int{}
 	for _, nodeId := range raft.otherNodes() {
-		nextIndex[nodeId] = raft.log.size() + 1
-		matchIndex[nodeId] = 0
+		raft.nextIndex[nodeId] = raft.log.size() + 1
+		raft.matchIndex[nodeId] = 0
 	}
 	raft.resetStepDownDeadline()
-	log.Println("became leader for Term", raft.currentTerm)
+	log.Println("Became leader for Term", raft.currentTerm)
+	log.Println("nextIndex:" + fmt.Sprint(raft.nextIndex))
+	log.Println("otherNodes:" + fmt.Sprint(raft.otherNodes()))
 	return nil
 }
 
@@ -239,77 +243,6 @@ func (raft *RaftNode) stepDownOnTimeout() (bool, error) {
 	if raft.state == StateLeader && raft.stepDownDeadline < time.Now().Unix() {
 		log.Println("Stepping down: haven't received any acks recently")
 		raft.becomeFollower()
-		return true, nil
-	}
-	return false, nil
-}
-
-func (raft *RaftNode) replicateLog() (bool, error) {
-	// If we're the leader, replicate unacknowledged log Entries To followers. Also serves as a heartbeat.
-
-	// How long has it been since we replicated?
-	elapsedTime := float64(time.Now().Unix() - raft.lastReplication)
-	// We'll set this To true if we replicate To anyone
-	replicated := false
-	// We'll need this To make sure we process responses in *this* Term
-	term := raft.currentTerm
-
-	if raft.state == StateLeader && raft.minReplicationInterval < elapsedTime {
-		// We're a leader, and enough time elapsed
-		for _, nodeId := range raft.otherNodes() {
-			// What Entries should we send this node?
-			ni := raft.nextIndex[raft.nodeId]
-			entries, err := raft.log.fromIndex(ni)
-			if err != nil {
-				return false, err
-			}
-
-			if len(entries) > 0 || raft.heartbeatInterval < elapsedTime {
-				log.Printf("replicating %d + To %d\n", ni, nodeId)
-
-				// closure
-				_ni := ni
-				_entries := append([]Entry(nil), entries...)
-				_nodeId := nodeId
-
-				handler := func(res Msg) error {
-					body := res.Body
-					if err := raft.maybeStepDown(body.Term); err != nil {
-						return err
-					}
-					if raft.state == StateLeader && term == raft.currentTerm {
-						raft.resetStepDownDeadline()
-						if body.Success {
-							raft.nextIndex[_nodeId] = max(raft.nextIndex[_nodeId], _ni+len(_entries))
-							raft.matchIndex[_nodeId] = max(raft.matchIndex[_nodeId], _ni-1+len(_entries))
-						} else {
-							raft.nextIndex[_nodeId] -= 1
-						}
-					}
-
-					return nil
-				}
-
-				raft.net.rpc(
-					nodeId,
-					MsgBody{
-						Type:         "append_entries",
-						Term:         raft.currentTerm,
-						LeaderId:     raft.nodeId,
-						PrevLogIndex: ni - 1,
-						PrevLogTerm:  raft.log.get(ni - 1).term,
-						Entries:      entries,
-						LeaderCommit: raft.commitIndex,
-					},
-					handler,
-				)
-				replicated = true
-			}
-		}
-	}
-
-	if replicated {
-		raft.lastReplication = time.Now().Unix()
 		return true, nil
 	}
 	return false, nil
@@ -333,7 +266,7 @@ func (raft *RaftNode) advanceCommitIndex() (bool, error) {
 	// If we're the leader, advance our commit index based on what other nodes match us.
 	if raft.state == StateLeader {
 		n := median(maps.Values(raft.getMatchIndex()))
-		if raft.commitIndex < n && raft.log.get(n).term == raft.currentTerm {
+		if raft.commitIndex < n && raft.log.get(n).Term == raft.currentTerm {
 			log.Printf("commit index now %d\n", n)
 			raft.commitIndex = n
 			return true, nil
@@ -344,161 +277,17 @@ func (raft *RaftNode) advanceCommitIndex() (bool, error) {
 
 func (raft *RaftNode) advanceStateMachine() (bool, error) {
 	// If we have un-applied committed Entries in the log, apply one To the state machine.
+	//log.Printf("advanceStateMachine -> lastApplied %d, commitIndex %d", raft.lastApplied, raft.commitIndex)
 	if raft.lastApplied < raft.commitIndex {
-		// Advance the applied index and apply that op
+		// Advance the applied index and apply that Op
 		raft.lastApplied += 1
-		raft.log.get(raft.lastApplied)
-		response := raft.stateMachine.apply(raft.log.get(raft.lastApplied).op)
+		response := raft.stateMachine.apply(raft.log.get(raft.lastApplied).Op)
 		if raft.state == StateLeader {
 			// We were the leader, let's respond To the Client.
 			raft.net.send(response.Dest, response.Body)
 		}
 	}
 	return true, nil
-}
-
-func (raft *RaftNode) setupHandlers() error {
-	// Handle initialization message
-	raftInit := func(msg Msg) error {
-		if raft.state != StateNascent {
-			return fmt.Errorf("Can't init twice")
-		}
-
-		raft.setNodeId(msg.Body.NodeId)
-		raft.nodeIds = msg.Body.NodeIds
-		raft.becomeFollower()
-
-		log.Println("I am: ", raft.nodeId)
-		raft.net.reply(msg, MsgBody{Type: initOkMsgBodyType})
-		return nil
-	}
-	if err := raft.net.on(initMsgBodyType, raftInit); err != nil {
-		return err
-	}
-
-	// When a node requests our vote...
-	requestVote := func(msg Msg) error {
-		if err := raft.maybeStepDown(msg.Body.Term); err != nil {
-			return err
-		}
-		grant := false
-
-		if msg.Body.Term < raft.currentTerm {
-			log.Printf("candidate Term %d lower than %d not granting vote \n", msg.Body.Term, raft.currentTerm)
-		} else if raft.votedFor != "" {
-			log.Printf("already voted for %s not granting vote \n", raft.votedFor)
-		} else if msg.Body.LastLogTerm < raft.log.lastTerm() {
-			log.Printf("have log Entries From Term %d which is newer than remote Term %d not granting vote\n", raft.log.lastTerm(), msg.Body.LastLogTerm)
-		} else if msg.Body.LastLogTerm == raft.log.lastTerm() && msg.Body.LastLogIndex < raft.log.size() {
-			log.Printf("our logs are both at Term %d but our log is %d and theirs is only %d \n", raft.log.lastTerm(), raft.log.size(), msg.Body.LastLogIndex)
-		} else {
-			log.Printf("Granting vote To %s\n", msg.Src)
-			grant = true
-			raft.votedFor = msg.Body.CandidateId
-			raft.resetElectionDeadline()
-		}
-
-		raft.net.reply(msg, MsgBody{
-			Type:         requestVoteResultMsgType,
-			Term:         raft.currentTerm,
-			VotedGranted: grant,
-		})
-
-		return nil
-	}
-	if err := raft.net.on(requestVoteMsgType, requestVote); err != nil {
-		return err
-	}
-
-	appendEntries := func(msg Msg) error {
-		if err := raft.maybeStepDown(msg.Body.Term); err != nil {
-			return err
-		}
-
-		result := MsgBody{
-			Type:    appendEntriesResultMsgType,
-			Term:    raft.currentTerm,
-			Success: false,
-		}
-
-		if msg.Body.Term < raft.currentTerm {
-			// leader is behind us
-			raft.net.reply(msg, result)
-			return nil
-		}
-
-		// This leader is valid; remember them and don't try To run our own election for a bit
-		raft.leaderId = msg.Body.LeaderId
-		raft.resetElectionDeadline()
-
-		// Check previous entry To see if it matches
-		if msg.Body.PrevLogIndex <= 0 {
-			return fmt.Errorf("out of bounds previous log index %d \n", msg.Body.PrevLogIndex)
-		}
-
-		if msg.Body.PrevLogIndex >= len(raft.log.Entries) {
-			return nil
-		}
-
-		if msg.Body.PrevLogTerm != raft.log.get(msg.Body.PrevLogIndex).term {
-			// We disagree on the previous Term
-			raft.net.reply(msg, result)
-			return nil
-		}
-
-		// We agree on the previous log Term; truncate and append
-		raft.log.truncate(msg.Body.PrevLogIndex)
-		raft.log.append(msg.Body.Entries)
-
-		// Advance commit pointer
-		if raft.commitIndex < msg.Body.LeaderCommit {
-			raft.commitIndex = min(msg.Body.LeaderCommit, raft.log.size())
-		}
-
-		// Acknowledge
-		result.Success = true
-		raft.net.reply(msg, result)
-		return nil
-	}
-
-	if err := raft.net.on(appendEntriesMsgType, appendEntries); err != nil {
-		return err
-	}
-
-	// Handle Client KV requests
-	kvRequests := func(msg Msg) error {
-		if raft.state == StateLeader {
-			// Record who we should tell about the completion of this op
-			op := msg.Body
-			op.Client = msg.Src
-			raft.log.append([]Entry{{
-				term: 0,
-				op:   msg.Body, // deep copy ?
-			}})
-		} else if raft.leaderId != "" {
-			// We're not the leader, but we can proxy To one
-			msg.Dest = raft.leaderId
-			raft.net.sendMsg(msg)
-		} else {
-			raft.net.reply(msg, MsgBody{
-				Type: errorMsgType,
-				Code: 11,
-				Text: "not a leader",
-			})
-		}
-		return nil
-	}
-
-	if err := raft.net.on(readMsgType, kvRequests); err != nil {
-		return err
-	}
-	if err := raft.net.on(writeMsgType, kvRequests); err != nil {
-		return err
-	}
-	if err := raft.net.on(casMsgType, kvRequests); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (raft *RaftNode) main() {
@@ -533,6 +322,7 @@ func (raft *RaftNode) main() {
 			if err != nil {
 				log.Println("Error! replicateLog", err)
 			}
+			log.Println("replicateLog success: ", success)
 		} else if success, err := raft.election(); err != nil || success {
 			if err != nil {
 				log.Println("Error! election", err)

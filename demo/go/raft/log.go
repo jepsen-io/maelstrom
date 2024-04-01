@@ -6,8 +6,8 @@ import (
 )
 
 type Entry struct {
-	term int
-	op   MsgBody
+	Term int
+	Op   MsgBody
 }
 
 type Log struct {
@@ -16,7 +16,7 @@ type Log struct {
 
 func (log *Log) init() {
 	log.Entries = []Entry{{
-		term: 0,
+		Term: 0,
 	}}
 }
 
@@ -25,8 +25,9 @@ func (log *Log) get(index int) Entry {
 }
 
 func (log *Log) append(entries []Entry) {
-	// Appends multiple Entries To the log.
+	// Appends multiple Entries To the log
 	log.Entries = append(log.Entries, entries...)
+	//logger.Println("append: entries", entries)
 }
 
 func (log *Log) last() Entry {
@@ -37,7 +38,7 @@ func (log *Log) last() Entry {
 func (log *Log) lastTerm() int {
 	// What's the Term of the last entry in the log?
 	lastEntry := log.last()
-	return lastEntry.term
+	return lastEntry.Term
 	// return 0
 }
 
