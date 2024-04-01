@@ -59,7 +59,6 @@ func (raft *RaftNode) setupHandlers() error {
 	}
 
 	appendEntries := func(msg Msg) error {
-		log.Println("begin func appendEntries", msg)
 		if err := raft.maybeStepDown(msg.Body.Term); err != nil {
 			return err
 		}
@@ -72,7 +71,6 @@ func (raft *RaftNode) setupHandlers() error {
 
 		if msg.Body.Term < raft.currentTerm {
 			// leader is behind us
-			log.Println("leader is behind us func appendEntries", msg.Body.Term, raft.currentTerm)
 			raft.net.reply(msg, result)
 			return nil
 		}
@@ -88,7 +86,6 @@ func (raft *RaftNode) setupHandlers() error {
 
 		if msg.Body.PrevLogIndex < len(raft.log.Entries) && (msg.Body.PrevLogTerm != raft.log.get(msg.Body.PrevLogIndex).Term) {
 			// We disagree on the previous Term
-			log.Println("We disagree on the previous Term func appendEntries", msg.Body.Term, raft.currentTerm)
 			raft.net.reply(msg, result)
 			return nil
 		}
@@ -102,7 +99,6 @@ func (raft *RaftNode) setupHandlers() error {
 			raft.commitIndex = min(msg.Body.LeaderCommit, raft.log.size())
 		}
 
-		log.Println("end func appendEntries", msg)
 		// Acknowledge
 		result["success"] = true
 		raft.net.reply(msg, result)

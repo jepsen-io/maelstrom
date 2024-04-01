@@ -54,10 +54,9 @@ func (net *Net) on(msgType MsgType, handler MsgHandler) error {
 func (net *Net) sendMsg(msg any) {
 	// Sends a raw message object
 	jsonBytes, _ := json.Marshal(msg)
-	log.Printf("Sent\n%s", string(jsonBytes))
+	//log.Printf("Sent\n%s", string(jsonBytes))
 	fmt.Println(string(jsonBytes))
-	//if msg.Dest == "" {
-	//	panic(string(jsonBytes))
+	//if err := os.Stdout.Sync(); err != nil {
 	//}
 }
 
@@ -122,9 +121,6 @@ func (net *Net) processMsg() (bool, error) {
 			return false, fmt.Errorf("No callback or handler for\n %v", msg)
 		}
 
-		if msg.Body.Type == appendEntriesMsgType {
-			log.Println("appendEntriesMsgType")
-		}
 		if err = handler(msg); err != nil {
 			return false, err
 		}

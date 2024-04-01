@@ -233,8 +233,6 @@ func (raft *RaftNode) becomeLeader() error {
 	}
 	raft.resetStepDownDeadline()
 	log.Println("Became leader for Term", raft.currentTerm)
-	log.Println("nextIndex:" + fmt.Sprint(raft.nextIndex))
-	log.Println("otherNodes:" + fmt.Sprint(raft.otherNodes()))
 	return nil
 }
 
@@ -322,7 +320,6 @@ func (raft *RaftNode) main() {
 			if err != nil {
 				log.Println("Error! replicateLog", err)
 			}
-			log.Println("replicateLog success: ", success)
 		} else if success, err := raft.election(); err != nil || success {
 			if err != nil {
 				log.Println("Error! election", err)
