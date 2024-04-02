@@ -2,44 +2,41 @@ package main
 
 import (
 	"fmt"
+	"github.com/pavan/maelstrom/demo/go/raft/structs"
 	"github.com/samber/lo"
 )
 
-type Entry struct {
-	Term int
-	Op   MsgBody
-}
-
 type Log struct {
-	Entries []Entry
+	Entries []structs.Entry
 }
 
 func (log *Log) init() {
-	log.Entries = []Entry{{
+	// Note that we provide a default entry here, which simplifies
+	// some default cases involving empty logs.
+	log.Entries = []structs.Entry{{
 		Term: 0,
 	}}
 }
 
-func (log *Log) get(index int) Entry {
+func (log *Log) get(index int) structs.Entry {
+	// Return a log entry by index. Note that Raft's log is 1-indexed.
 	return log.Entries[index-1]
 }
 
-func (log *Log) append(entries []Entry) {
-	// Appends multiple Entries To the log
+func (log *Log) append(entries []structs.Entry) {
+	// Appends multiple entries to the log
 	log.Entries = append(log.Entries, entries...)
 	//logger.Println("append: entries", entries)
 }
 
-func (log *Log) last() Entry {
+func (log *Log) last() structs.Entry {
 	// Returns the most recent entry
 	return log.Entries[len(log.Entries)-1]
 }
 
-func (log *Log) lastTerm() int {
-	// What's the Term of the last entry in the log?
-	lastEntry := log.last()
-	return lastEntry.Term
-	// return 0
+func (log *Log) lastTerm() float64 {
+	// What's the term of the last entry in the log?
+	return log.last().Term // TODO: if index exception return 0
 }
 
 func (log *Log) size() int {
@@ -47,15 +44,16 @@ func (log *Log) size() int {
 }
 
 func (log *Log) truncate(size int) {
+	// Truncate the log to this many entries
 	log.Entries = lo.Slice(log.Entries, 0, size)
 }
 
-func (log *Log) fromIndex(index int) ([]Entry, error) {
+func (log *Log) fromIndex(index int) ([]structs.Entry, error) {
 	if index <= 0 {
 		return nil, fmt.Errorf("illegal index %d", index)
 	}
 
-	return lo.Slice(log.Entries, index, len(log.Entries)+1), nil
+	return lo.Slice(log.Entries, index-1, len(log.Entries)+1), nil
 }
 
 func newLog() *Log {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/mitchellh/mapstructure"
+	"github.com/pavan/maelstrom/demo/go/raft/structs"
 	"log"
 	"time"
 )
@@ -31,17 +33,22 @@ func (raft *RaftNode) replicateLog() (bool, error) {
 
 				// closure
 				_ni := ni
-				_entries := append([]Entry(nil), entries...)
+				_entries := append([]structs.Entry(nil), entries...)
 				_nodeId := nodeId
 
-				handler := func(res Msg) error {
-					body := res.Body
-					if err := raft.maybeStepDown(body.Term); err != nil {
+				appendEntriesResHandler := func(res structs.Msg) error {
+					var appendEntriesResMsgBody structs.AppendEntriesResMsgBody
+					err := mapstructure.Decode(res.Body, &appendEntriesResMsgBody)
+					if err != nil {
+						panic(err)
+					}
+
+					if err := raft.maybeStepDown(appendEntriesResMsgBody.Term); err != nil {
 						return err
 					}
 					if raft.state == StateLeader && term == raft.currentTerm {
 						raft.resetStepDownDeadline()
-						if body.Success {
+						if appendEntriesResMsgBody.Success {
 							raft.nextIndex[_nodeId] = max(raft.nextIndex[_nodeId], _ni+len(_entries))
 							raft.matchIndex[_nodeId] = max(raft.matchIndex[_nodeId], _ni-1+len(_entries))
 							log.Printf("node %s entries %d ni %d\n", _nodeId, len(_entries), ni)
@@ -56,16 +63,16 @@ func (raft *RaftNode) replicateLog() (bool, error) {
 
 				raft.net.rpc(
 					nodeId,
-					map[string]interface{}{
-						"type":           appendEntriesMsgType,
-						"term":           raft.currentTerm,
-						"leader_id":      raft.nodeId,
-						"prev_log_index": ni - 1,
-						"prev_log_term":  raft.log.get(ni - 1).Term,
-						"entries":        entries,
-						"leader_commit":  raft.commitIndex,
+					structs.AppendEntriesMsgBody{
+						Type:         structs.MsgTypeAppendEntries,
+						Term:         raft.currentTerm,
+						LeaderId:     raft.leaderId,
+						PrevLogIndex: ni - 1,
+						PrevLogTerm:  raft.log.get(ni - 1).Term,
+						Entries:      entries,
+						LeaderCommit: raft.commitIndex,
 					},
-					handler,
+					appendEntriesResHandler,
 				)
 				replicated = true
 			}

@@ -2,67 +2,73 @@ package main
 
 import (
 	"fmt"
+	"github.com/pavan/maelstrom/demo/go/raft/structs"
+	"log"
 )
 
 // KVStore A state machine providing a Key-Value store.
 type KVStore struct {
-	state map[int]int
+	state map[float64]float64
 }
 
 func (kvStore *KVStore) init() {
-	kvStore.state = map[int]int{}
+	kvStore.state = map[float64]float64{}
 }
 
-func (kvStore *KVStore) apply(op MsgBody) ResponseMsg {
-	// Applies an Op To the state machine, and returns a response message.
+func (kvStore *KVStore) apply(op structs.Operation) structs.OperationResponse {
+	// Applies an op to the state machine, and returns a response message.
 	t := op.Type
 	k := op.Key
 
-	var response map[string]interface{}
+	var response structs.OperationResponse
+	var body structs.ResponseBody
 	// Handle state transition
-	if t == readMsgType {
-		if _, ok := kvStore.state[k]; ok {
-			response = map[string]interface{}{
-				"type":  readOkMsgType,
-				"value": kvStore.state[k],
+	if t == structs.MsgTypeRead {
+		if value, ok := kvStore.state[k]; ok {
+			body = structs.ReadOkMsgBody{
+				Type:  structs.MsgTypeReadOk,
+				Value: value,
 			}
 		} else {
-			response = map[string]interface{}{
-				"type": errorMsgType,
-				"code": 20,
-				"text": "not found",
+			body = structs.ErrorMsgBody{
+				Type: structs.MsgTypeError,
+				Code: structs.ErrCodeKeyDoesNotExist,
+				Text: structs.ErrTxtNotFound,
 			}
 		}
-	} else if t == writeMsgType {
+	} else if t == structs.MsgTypeWrite {
 		kvStore.state[k] = op.Value
-		response = map[string]interface{}{
-			"type": writeOkMsgType,
+		body = structs.WriteOkMsgBody{
+			Type: structs.MsgTypeWriteOk,
 		}
-	} else if t == casMsgType {
+	} else if t == structs.MsgTypeCas {
 		if value, ok := kvStore.state[k]; !ok {
-			response = map[string]interface{}{
-				"type": errorMsgType,
-				"code": 20,
-				"text": "not found",
+			body = structs.ErrorMsgBody{
+				Type: structs.MsgTypeError,
+				Code: structs.ErrCodeKeyDoesNotExist,
+				Text: structs.ErrTxtNotFound,
 			}
 		} else if value != op.From {
-			response = map[string]interface{}{
-				"type": errorMsgType,
-				"code": 22,
-				"text": fmt.Sprintf("expected %d but had %d", op.From, value),
+			body = structs.ErrorMsgBody{
+				Type: structs.MsgTypeError,
+				Code: structs.ErrCodePreconditionFailed,
+				Text: fmt.Sprintf(structs.ErrExpectedButHad, op.From, value),
 			}
 		} else {
 			kvStore.state[k] = op.To
-			response = map[string]interface{}{
-				"type": casOkMsgType,
+			body = structs.CasOkMsgBody{
+				Type: structs.MsgTypeCasOk,
 			}
 		}
 	}
 
-	response["in_reply_to"] = op.MsgId
-	return ResponseMsg{
+	log.Printf("KV:\n %v \n", kvStore.state)
+
+	body.SetInReplyTo(op.MsgId)
+	response.Dest = op.Client
+	return structs.OperationResponse{
 		Dest: op.Client,
-		Body: response,
+		Body: body,
 	}
 }
 

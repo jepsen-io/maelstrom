@@ -2,120 +2,144 @@ package main
 
 import (
 	"fmt"
+	mapstructure "github.com/mitchellh/mapstructure"
+	"github.com/pavan/maelstrom/demo/go/raft/structs"
 	"log"
 )
 
 func (raft *RaftNode) setupHandlers() error {
 	// Handle initialization message
-	raftInit := func(msg Msg) error {
+	raftInit := func(msg structs.Msg) error {
 		if raft.state != StateNascent {
 			return fmt.Errorf("Can't init twice")
 		}
 
-		raft.setNodeId(msg.Body.NodeId)
-		raft.nodeIds = msg.Body.NodeIds
+		var initMsgBody structs.InitMsgBody
+		err := mapstructure.Decode(msg.Body, &initMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		raft.setNodeId(initMsgBody.NodeId)
+		raft.nodeIds = initMsgBody.NodeIds
 		raft.becomeFollower()
 
 		log.Println("I am: ", raft.nodeId)
-		raft.net.reply(msg, map[string]interface{}{"type": initOkMsgBodyType})
+
+		raft.net.reply(msg, structs.InitOkMsgBody{
+			Type:      structs.MsgTypeInitOk,
+			InReplyTo: initMsgBody.MsgId,
+		})
 		return nil
 	}
-	if err := raft.net.on(initMsgBodyType, raftInit); err != nil {
+
+	if err := raft.net.on(structs.MsgTypeInit, raftInit); err != nil {
 		return err
 	}
 
 	// When a node requests our vote...
-	requestVote := func(msg Msg) error {
-		if err := raft.maybeStepDown(msg.Body.Term); err != nil {
+	requestVote := func(msg structs.Msg) error {
+		var requestVoteMsgBody structs.RequestVoteMsgBody
+		err := mapstructure.Decode(msg.Body, &requestVoteMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := raft.maybeStepDown(requestVoteMsgBody.Term); err != nil {
 			return err
 		}
 		grant := false
 
-		if msg.Body.Term < raft.currentTerm {
-			log.Printf("candidate Term %d lower than %d not granting vote \n", msg.Body.Term, raft.currentTerm)
+		if requestVoteMsgBody.Term < raft.currentTerm {
+			log.Printf("candidate Term %d lower than %d not granting vote \n", requestVoteMsgBody.Term, raft.currentTerm)
 		} else if raft.votedFor != "" {
 			log.Printf("already voted for %s not granting vote \n", raft.votedFor)
-		} else if msg.Body.LastLogTerm < raft.log.lastTerm() {
-			log.Printf("have log Entries From Term %d which is newer than remote Term %d not granting vote\n", raft.log.lastTerm(), msg.Body.LastLogTerm)
-		} else if msg.Body.LastLogTerm == raft.log.lastTerm() && msg.Body.LastLogIndex < raft.log.size() {
-			log.Printf("our logs are both at Term %d but our log is %d and theirs is only %d \n", raft.log.lastTerm(), raft.log.size(), msg.Body.LastLogIndex)
+		} else if requestVoteMsgBody.LastLogTerm < raft.log.lastTerm() {
+			log.Printf("have log Entries From Term %d which is newer than remote Term %d not granting vote\n", raft.log.lastTerm(), requestVoteMsgBody.LastLogTerm)
+		} else if requestVoteMsgBody.LastLogTerm == raft.log.lastTerm() && requestVoteMsgBody.LastLogIndex < raft.log.size() {
+			log.Printf("our logs are both at Term %d but our log is %d and theirs is only %d \n", raft.log.lastTerm(), raft.log.size(), requestVoteMsgBody.LastLogIndex)
 		} else {
 			log.Printf("Granting vote To %s\n", msg.Src)
 			grant = true
-			raft.votedFor = msg.Body.CandidateId
+			raft.votedFor = requestVoteMsgBody.CandidateId
 			raft.resetElectionDeadline()
 		}
 
-		raft.net.reply(msg, map[string]interface{}{
-			"type":         requestVoteResultMsgType,
-			"term":         raft.currentTerm,
-			"vote_granted": grant,
+		raft.net.reply(msg, structs.RequestVoteResMsgBody{
+			Type:         structs.MsgTypeRequestVoteResult,
+			Term:         raft.currentTerm,
+			VotedGranted: grant,
 		})
 
 		return nil
 	}
-	if err := raft.net.on(requestVoteMsgType, requestVote); err != nil {
+	if err := raft.net.on(structs.MsgTypeRequestVote, requestVote); err != nil {
 		return err
 	}
 
-	appendEntries := func(msg Msg) error {
-		if err := raft.maybeStepDown(msg.Body.Term); err != nil {
+	appendEntries := func(msg structs.Msg) error {
+		var appendEntriesMsgBody structs.AppendEntriesMsgBody
+		err := mapstructure.Decode(msg.Body, &appendEntriesMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := raft.maybeStepDown(appendEntriesMsgBody.Term); err != nil {
 			return err
 		}
 
-		result := map[string]interface{}{
-			"type":    appendEntriesResultMsgType,
-			"term":    raft.currentTerm,
-			"success": false,
+		result := structs.AppendEntriesResMsgBody{
+			Type:    structs.MsgTypeAppendEntriesResult,
+			Term:    raft.currentTerm,
+			Success: false,
 		}
 
-		if msg.Body.Term < raft.currentTerm {
+		if appendEntriesMsgBody.Term < raft.currentTerm {
 			// leader is behind us
 			raft.net.reply(msg, result)
 			return nil
 		}
 
 		// This leader is valid; remember them and don't try To run our own election for a bit
-		raft.leaderId = msg.Body.LeaderId
+		raft.leaderId = appendEntriesMsgBody.LeaderId
 		raft.resetElectionDeadline()
 
 		// Check previous entry To see if it matches
-		if msg.Body.PrevLogIndex <= 0 {
-			return fmt.Errorf("out of bounds previous log index %d \n", msg.Body.PrevLogIndex)
+		if appendEntriesMsgBody.PrevLogIndex <= 0 {
+			return fmt.Errorf("out of bounds previous log index %d \n", appendEntriesMsgBody.PrevLogIndex)
 		}
 
-		if msg.Body.PrevLogIndex < len(raft.log.Entries) && (msg.Body.PrevLogTerm != raft.log.get(msg.Body.PrevLogIndex).Term) {
+		if appendEntriesMsgBody.PrevLogIndex < len(raft.log.Entries) && (appendEntriesMsgBody.PrevLogTerm != raft.log.get(appendEntriesMsgBody.PrevLogIndex).Term) {
 			// We disagree on the previous Term
 			raft.net.reply(msg, result)
 			return nil
 		}
 
-		// We agree on the previous log Term; truncate and append
-		raft.log.truncate(msg.Body.PrevLogIndex)
-		raft.log.append(msg.Body.Entries)
+		// We agree on the previous log term; truncate and append
+		raft.log.truncate(appendEntriesMsgBody.PrevLogIndex)
+		raft.log.append(appendEntriesMsgBody.Entries)
 
 		// Advance commit pointer
-		if raft.commitIndex < msg.Body.LeaderCommit {
-			raft.commitIndex = min(msg.Body.LeaderCommit, raft.log.size())
+		if raft.commitIndex < appendEntriesMsgBody.LeaderCommit {
+			raft.commitIndex = min(appendEntriesMsgBody.LeaderCommit, raft.log.size())
 		}
 
 		// Acknowledge
-		result["success"] = true
+		result.Success = true
 		raft.net.reply(msg, result)
 		return nil
 	}
 
-	if err := raft.net.on(appendEntriesMsgType, appendEntries); err != nil {
+	if err := raft.net.on(structs.MsgTypeAppendEntries, appendEntries); err != nil {
 		return err
 	}
 
 	// Handle Client KV requests
-	kvRequests := func(msg Msg) error {
+	kvRequests := func(msg structs.Msg, op structs.Operation) error {
+		log.Println()
 		if raft.state == StateLeader {
 			// Record who we should tell about the completion of this Op
-			op := msg.Body
-			op.Client = msg.Src
-			raft.log.append([]Entry{{
+			raft.log.append([]structs.Entry{{
 				Term: raft.currentTerm,
 				Op:   op,
 			}})
@@ -124,22 +148,70 @@ func (raft *RaftNode) setupHandlers() error {
 			msg.Dest = raft.leaderId
 			raft.net.sendMsg(msg)
 		} else {
-			raft.net.reply(msg, map[string]interface{}{
-				"type": errorMsgType,
-				"code": 11,
-				"text": "not a leader",
+			raft.net.reply(msg, structs.ErrorMsgBody{
+				Type: structs.MsgTypeError,
+				Code: 11,
+				Text: "not a leader",
 			})
 		}
 		return nil
 	}
 
-	if err := raft.net.on(readMsgType, kvRequests); err != nil {
+	kvReadRequest := func(msg structs.Msg) error {
+		var readMsgBody structs.ReadMsgBody
+		err := mapstructure.Decode(msg.Body, &readMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		return kvRequests(msg, structs.Operation{
+			Type:   readMsgBody.Type,
+			MsgId:  readMsgBody.MsgId,
+			Key:    readMsgBody.Key,
+			Client: readMsgBody.Client,
+		})
+	}
+
+	kvWriteRequest := func(msg structs.Msg) error {
+		var writeMsgBody structs.WriteMsgBody
+		err := mapstructure.Decode(msg.Body, &writeMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		return kvRequests(msg, structs.Operation{
+			Type:   writeMsgBody.Type,
+			MsgId:  writeMsgBody.MsgId,
+			Key:    writeMsgBody.Key,
+			Client: writeMsgBody.Client,
+			Value:  writeMsgBody.Value,
+		})
+	}
+
+	kvCasRequest := func(msg structs.Msg) error {
+		var casMsgBody structs.CasMsgBody
+		err := mapstructure.Decode(msg.Body, &casMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		return kvRequests(msg, structs.Operation{
+			Type:   casMsgBody.Type,
+			MsgId:  casMsgBody.MsgId,
+			Key:    casMsgBody.Key,
+			Client: casMsgBody.Client,
+			From:   casMsgBody.From,
+			To:     casMsgBody.From,
+		})
+	}
+
+	if err := raft.net.on(structs.MsgTypeRead, kvReadRequest); err != nil {
 		return err
 	}
-	if err := raft.net.on(writeMsgType, kvRequests); err != nil {
+	if err := raft.net.on(structs.MsgTypeWrite, kvWriteRequest); err != nil {
 		return err
 	}
-	if err := raft.net.on(casMsgType, kvRequests); err != nil {
+	if err := raft.net.on(structs.MsgTypeCas, kvCasRequest); err != nil {
 		return err
 	}
 	return nil

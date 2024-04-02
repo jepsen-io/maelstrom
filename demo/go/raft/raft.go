@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/mitchellh/mapstructure"
+	"github.com/pavan/maelstrom/demo/go/raft/structs"
 	"golang.org/x/exp/maps"
 	"log"
 	"math/rand"
@@ -33,7 +35,7 @@ type RaftNode struct {
 
 	// Raft State
 	state       string
-	currentTerm int
+	currentTerm float64
 	votedFor    string
 	commitIndex int
 	lastApplied int
@@ -55,7 +57,7 @@ func (raft *RaftNode) init() error {
 	raft.heartbeatInterval = 1         // Time between heartbeats, in seconds
 	raft.minReplicationInterval = 0.05 // Don't replicate TOO frequently
 	raft.electionDeadline = 0          // Next election, in epoch seconds
-	raft.stepDownDeadline = 0          // When To step down automatically
+	raft.stepDownDeadline = 0          // When to step down automatically
 	raft.lastReplication = 0           // Last replication, in epoch seconds
 
 	// Node & cluster IDs
@@ -63,20 +65,20 @@ func (raft *RaftNode) init() error {
 	raft.nodeIds = []string{}
 
 	// Raft State
-	raft.state = StateNascent
-	raft.currentTerm = 0
-	raft.votedFor = ""
-	raft.commitIndex = 0
-	raft.lastApplied = 1 // index: 0 -> Op: None
-	raft.leaderId = ""   // Who do we think the leader is?
+	raft.state = StateNascent // One of nascent, follower, candidate, or leader
+	raft.currentTerm = 0      // Our current Raft term
+	raft.votedFor = ""        // What node did we vote for in this term?
+	raft.commitIndex = 0      // The index of the highest committed entry
+	raft.lastApplied = 1      // index: 0 -> Op: None
+	raft.leaderId = ""        // Who do we think the leader is?
 
 	// Leader State
-	raft.nextIndex = map[string]int{}
-	raft.matchIndex = map[string]int{}
+	raft.nextIndex = map[string]int{}  // A map of nodes to the next index to replicate
+	raft.matchIndex = map[string]int{} // Map of nodes to the highest log entry known to be replicated on that node.
 
 	// Components
-	raft.log = newLog()
 	raft.net = newNet()
+	raft.log = newLog()
 	raft.stateMachine = newKVStore()
 	if err := raft.setupHandlers(); err != nil {
 		return err
@@ -100,11 +102,12 @@ func (raft *RaftNode) getMatchIndex() map[string]int {
 }
 
 func (raft *RaftNode) setNodeId(id string) {
+	// Assign our node ID
 	raft.nodeId = id
 	raft.net.setNodeId(id)
 }
 
-func (raft *RaftNode) brpc(body map[string]interface{}, handler MsgHandler) {
+func (raft *RaftNode) brpc(body structs.RequestBody, handler MsgHandler) {
 	// Broadcast an RPC message To all other nodes, and call handler with each response.
 	for _, nodeId := range raft.otherNodes() {
 		raft.net.rpc(nodeId, body, handler)
@@ -121,7 +124,7 @@ func (raft *RaftNode) resetStepDownDeadline() {
 	raft.stepDownDeadline = time.Now().Unix() + raft.electionTimeout
 }
 
-func (raft *RaftNode) advanceTerm(term int) error {
+func (raft *RaftNode) advanceTerm(term float64) error {
 	// Advance our Term To `Term`, resetting who we voted for.
 	if raft.currentTerm >= term {
 		return fmt.Errorf("Can't go backwards")
@@ -132,10 +135,10 @@ func (raft *RaftNode) advanceTerm(term int) error {
 	return nil
 }
 
-func (raft *RaftNode) maybeStepDown(remoteTerm int) error {
+func (raft *RaftNode) maybeStepDown(remoteTerm float64) error {
 	// If remoteTerm is bigger than ours, advance our Term and become a follower.
 	if raft.currentTerm < remoteTerm {
-		log.Printf("Stepping down: remote Term %d higher than our Term %d", remoteTerm, raft.currentTerm)
+		log.Printf("Stepping down: remote term %f higher than our term %f", remoteTerm, raft.currentTerm)
 		if err := raft.advanceTerm(remoteTerm); err != nil {
 			return err
 		}
@@ -153,20 +156,25 @@ func (raft *RaftNode) requestVotes() error {
 	// We vote for our-self
 	votes[raft.nodeId] = true
 
-	handler := func(res Msg) error {
+	requestVoteResHandler := func(msg structs.Msg) error {
 		raft.resetStepDownDeadline()
-		body := res.Body
-		if err := raft.maybeStepDown(body.Term); err != nil {
+		var requestVoteResMsgBody structs.RequestVoteResMsgBody
+		err := mapstructure.Decode(msg.Body, &requestVoteResMsgBody)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := raft.maybeStepDown(requestVoteResMsgBody.Term); err != nil {
 			return err
 		}
 
 		if raft.state == StateCandidate &&
 			raft.currentTerm == term &&
-			body.Term == raft.currentTerm &&
-			body.VotedGranted {
+			requestVoteResMsgBody.Term == raft.currentTerm &&
+			requestVoteResMsgBody.VotedGranted {
 
 			// We have a vote for our candidacy
-			votes[res.Src] = true
+			votes[msg.Src] = true
 			log.Println("have votes " + fmt.Sprint(votes))
 
 			if majority(len(raft.nodeIds)) <= len(votes) {
@@ -181,14 +189,14 @@ func (raft *RaftNode) requestVotes() error {
 
 	// Broadcast vote request
 	raft.brpc(
-		map[string]interface{}{
-			"type":           requestVoteMsgType,
-			"term":           raft.currentTerm,
-			"candidate":      raft.nodeId,
-			"last_log_index": raft.log.size(),
-			"last_log_term":  raft.log.lastTerm(),
+		structs.RequestVoteMsgBody{
+			Type:         structs.MsgTypeRequestVote,
+			Term:         raft.currentTerm,
+			CandidateId:  raft.nodeId,
+			LastLogIndex: raft.log.size(),
+			LastLogTerm:  raft.log.lastTerm(),
 		},
-		handler,
+		requestVoteResHandler,
 	)
 	return nil
 }
