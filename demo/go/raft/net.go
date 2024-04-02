@@ -8,12 +8,15 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 	"syscall"
 )
 
 type MsgHandler func(msg structs.Msg) error
 
 type Net struct {
+	mu        sync.Mutex
+	wg        sync.WaitGroup
 	nodeId    string                         // Our local node ID
 	nextMsgId float64                        // The next message ID we're going To allocate
 	handlers  map[structs.MsgType]MsgHandler // A map of message types to handler functions
@@ -21,6 +24,9 @@ type Net struct {
 
 	// stdin
 	stdin io.Reader
+
+	// Stdout is for writing messages out to the Maelstrom network.
+	stdout io.Writer
 }
 
 func (net *Net) init() {
@@ -28,7 +34,9 @@ func (net *Net) init() {
 	net.nextMsgId = 0                               // The next message ID we're going to allocate
 	net.handlers = map[structs.MsgType]MsgHandler{} // A map of message types to handler functions
 	net.callbacks = map[float64]MsgHandler{}        // A map of message IDs to response handlers
+
 	net.stdin = os.Stdin
+	net.stdout = os.Stdout
 }
 
 func (net *Net) setNodeId(id string) {
@@ -57,9 +65,13 @@ func (net *Net) sendMsg(msg any) {
 	// Sends a raw message object
 	jsonBytes, _ := json.Marshal(msg)
 	log.Printf("Sent\n%s", string(jsonBytes))
-	fmt.Println(string(jsonBytes))
-	//if err := os.Stdout.Sync(); err != nil {
-	//}
+
+	if _, err := net.stdout.Write(jsonBytes); err != nil {
+		panic(err)
+	}
+	if _, err := net.stdout.Write([]byte{'\n'}); err != nil {
+		panic(err)
+	}
 }
 
 func (net *Net) send(dest string, body any) {
@@ -75,6 +87,7 @@ func (net *Net) send(dest string, body any) {
 		panic(err)
 	}
 
+	// Synchronize access to STDOUT.
 	net.sendMsg(structs.Msg{
 		Src:  net.nodeId,
 		Dest: dest,
@@ -90,9 +103,12 @@ func (net *Net) reply(req structs.Msg, body structs.ResponseBody) {
 
 func (net *Net) rpc(dest string, body structs.RequestBody, handler MsgHandler) {
 	// Sends an RPC request to dest and handles the response with handler.
+	net.mu.Lock()
+
 	msgId := net.newMsgId()
-	log.Printf("new message for callback is %f: %v : %v \n", msgId, body, handler)
 	net.callbacks[msgId] = handler
+	net.mu.Unlock()
+
 	body.SetMsgId(msgId)
 	net.send(dest, body)
 }
@@ -132,12 +148,20 @@ func (net *Net) processMsg() (bool, error) {
 
 		var handler MsgHandler
 		if msg.Body["in_reply_to"] != nil {
+			net.mu.Lock()
 			handler = net.callbacks[msg.Body["in_reply_to"].(float64)]
 			net.callbacks[msg.Body["in_reply_to"].(float64)] = nil
+			net.mu.Unlock()
 		} else if value, ok := net.handlers[structs.MsgType(msg.Body["type"].(string))]; ok {
 			handler = value
 		} else {
 			return false, fmt.Errorf("No callback or handler for\n %v", msg)
+		}
+
+		// If no callback exists, just log a message and skip.
+		if handler == nil {
+			log.Printf("Ignoring reply to %f with no callback", msg.Body["in_reply_to"].(float64))
+			return true, nil
 		}
 
 		if err = handler(msg); err != nil {
