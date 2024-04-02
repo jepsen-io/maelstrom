@@ -1,7 +1,6 @@
 package structs
 
 type Msg struct {
-	Id   float64                `json:"id"`
 	Src  string                 `json:"src"`
 	Dest string                 `json:"dest"`
 	Body map[string]interface{} `json:"body"`

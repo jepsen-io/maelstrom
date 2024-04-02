@@ -29,11 +29,3 @@ func FD_ZERO(p *syscall.FdSet) {
 func FD_ISSET(p *syscall.FdSet, i int) bool {
 	return (p.Bits[i/64] & (1 << uint(i) % 64)) != 0
 }
-
-//func deepCopy(src, dist interface{}) (err error) {
-//	buf := bytes.Buffer{}
-//	if err = gob.NewEncoder(&buf).Encode(src); err != nil {
-//		return
-//	}
-//	return gob.NewDecoder(&buf).Decode(dist)
-//}

@@ -116,6 +116,7 @@ func (raft *RaftNode) brpc(body structs.RequestBody, handler MsgHandler) {
 
 func (raft *RaftNode) resetElectionDeadline() {
 	temp := int64(float64(raft.electionTimeout) * (rand.Float64() + 1.0))
+	log.Printf("resetElectionDeadline by %d \n", temp)
 	raft.electionDeadline = time.Now().Unix() + temp
 }
 
@@ -125,7 +126,7 @@ func (raft *RaftNode) resetStepDownDeadline() {
 }
 
 func (raft *RaftNode) advanceTerm(term float64) error {
-	// Advance our Term To `Term`, resetting who we voted for.
+	// Advance our term To `term`, resetting who we voted for.
 	if raft.currentTerm >= term {
 		return fmt.Errorf("Can't go backwards")
 	}
@@ -136,7 +137,7 @@ func (raft *RaftNode) advanceTerm(term float64) error {
 }
 
 func (raft *RaftNode) maybeStepDown(remoteTerm float64) error {
-	// If remoteTerm is bigger than ours, advance our Term and become a follower.
+	// If remoteTerm is bigger than ours, advance our term and become a follower.
 	if raft.currentTerm < remoteTerm {
 		log.Printf("Stepping down: remote term %f higher than our term %f", remoteTerm, raft.currentTerm)
 		if err := raft.advanceTerm(remoteTerm); err != nil {
@@ -207,7 +208,7 @@ func (raft *RaftNode) becomeFollower() {
 	raft.matchIndex = map[string]int{}
 	raft.leaderId = ""
 	raft.resetElectionDeadline()
-	log.Println("Became follower for Term", raft.currentTerm)
+	log.Println("Became follower for term", raft.currentTerm)
 }
 
 func (raft *RaftNode) becomeCandidate() error {
@@ -219,7 +220,7 @@ func (raft *RaftNode) becomeCandidate() error {
 	raft.leaderId = ""
 	raft.resetElectionDeadline()
 	raft.resetStepDownDeadline()
-	log.Println("Became candidate for Term", raft.currentTerm)
+	log.Println("Became candidate for term", raft.currentTerm)
 	if err := raft.requestVotes(); err != nil {
 		return err
 	}
@@ -228,13 +229,13 @@ func (raft *RaftNode) becomeCandidate() error {
 
 func (raft *RaftNode) becomeLeader() error {
 	if raft.state != StateCandidate {
-		return fmt.Errorf("should be a candidate")
+		return fmt.Errorf("Should be a candidate")
 	}
 
 	raft.state = StateLeader
 	raft.leaderId = ""
 	raft.lastReplication = 0 // Start replicating immediately
-	// We'll start by trying To replicate our most recent entry
+	// We'll start by trying to replicate our most recent entry
 	for _, nodeId := range raft.otherNodes() {
 		raft.nextIndex[nodeId] = raft.log.size() + 1
 		raft.matchIndex[nodeId] = 0
@@ -244,14 +245,19 @@ func (raft *RaftNode) becomeLeader() error {
 	return nil
 }
 
-func (raft *RaftNode) stepDownOnTimeout() (bool, error) {
-	// If we haven't received any acks for a while, step down.
-	if raft.state == StateLeader && raft.stepDownDeadline < time.Now().Unix() {
-		log.Println("Stepping down: haven't received any acks recently")
-		raft.becomeFollower()
-		return true, nil
+func (raft *RaftNode) advanceStateMachine() (bool, error) {
+	// If we have un-applied committed entries in the log, apply one to the state machine.
+	//log.Printf("advanceStateMachine -> lastApplied %d, commitIndex %d", raft.lastApplied, raft.commitIndex)
+	if raft.lastApplied < raft.commitIndex {
+		// Advance the applied index and apply that Op
+		raft.lastApplied += 1
+		response := raft.stateMachine.apply(raft.log.get(raft.lastApplied).Op)
+		if raft.state == StateLeader {
+			// We were the leader, let's respond to the Client.
+			raft.net.send(response.Dest, response.Body)
+		}
 	}
-	return false, nil
+	return true, nil
 }
 
 func (raft *RaftNode) election() (bool, error) {
@@ -260,11 +266,22 @@ func (raft *RaftNode) election() (bool, error) {
 		if (raft.state == StateFollower) || (raft.state == StateCandidate) {
 			return true, raft.becomeCandidate()
 		} else {
+			// We're a leader, or initializing; sleep again
 			raft.resetElectionDeadline()
 		}
 		return true, nil
 	}
 
+	return false, nil
+}
+
+func (raft *RaftNode) stepDownOnTimeout() (bool, error) {
+	// If we haven't received any acks for a while, step down.
+	if raft.state == StateLeader && raft.stepDownDeadline < time.Now().Unix() {
+		log.Println("Stepping down: haven't received any acks recently")
+		raft.becomeFollower()
+		return true, nil
+	}
 	return false, nil
 }
 
@@ -279,21 +296,6 @@ func (raft *RaftNode) advanceCommitIndex() (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-func (raft *RaftNode) advanceStateMachine() (bool, error) {
-	// If we have un-applied committed Entries in the log, apply one To the state machine.
-	//log.Printf("advanceStateMachine -> lastApplied %d, commitIndex %d", raft.lastApplied, raft.commitIndex)
-	if raft.lastApplied < raft.commitIndex {
-		// Advance the applied index and apply that Op
-		raft.lastApplied += 1
-		response := raft.stateMachine.apply(raft.log.get(raft.lastApplied).Op)
-		if raft.state == StateLeader {
-			// We were the leader, let's respond To the Client.
-			raft.net.send(response.Dest, response.Body)
-		}
-	}
-	return true, nil
 }
 
 func (raft *RaftNode) main() {

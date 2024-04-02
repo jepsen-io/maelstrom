@@ -50,6 +50,7 @@ func (log *Log) truncate(size int) {
 
 func (log *Log) fromIndex(index int) ([]structs.Entry, error) {
 	if index <= 0 {
+		panic(fmt.Errorf("illegal index %d", index))
 		return nil, fmt.Errorf("illegal index %d", index)
 	}
 

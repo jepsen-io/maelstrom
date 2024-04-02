@@ -134,7 +134,6 @@ func (net *Net) processMsg() (bool, error) {
 		if msg.Body["in_reply_to"] != nil {
 			handler = net.callbacks[msg.Body["in_reply_to"].(float64)]
 			net.callbacks[msg.Body["in_reply_to"].(float64)] = nil
-			log.Printf("removing callback for msgId: %f \n", msg.Body["in_reply_to"].(float64))
 		} else if value, ok := net.handlers[structs.MsgType(msg.Body["type"].(string))]; ok {
 			handler = value
 		} else {

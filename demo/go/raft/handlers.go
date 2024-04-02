@@ -27,8 +27,7 @@ func (raft *RaftNode) setupHandlers() error {
 		log.Println("I am: ", raft.nodeId)
 
 		raft.net.reply(msg, structs.InitOkMsgBody{
-			Type:      structs.MsgTypeInitOk,
-			InReplyTo: initMsgBody.MsgId,
+			Type: structs.MsgTypeInitOk,
 		})
 		return nil
 	}
@@ -51,15 +50,15 @@ func (raft *RaftNode) setupHandlers() error {
 		grant := false
 
 		if requestVoteMsgBody.Term < raft.currentTerm {
-			log.Printf("candidate Term %d lower than %d not granting vote \n", requestVoteMsgBody.Term, raft.currentTerm)
+			log.Printf("candidate term %f lower than %f not granting vote \n", requestVoteMsgBody.Term, raft.currentTerm)
 		} else if raft.votedFor != "" {
 			log.Printf("already voted for %s not granting vote \n", raft.votedFor)
 		} else if requestVoteMsgBody.LastLogTerm < raft.log.lastTerm() {
-			log.Printf("have log Entries From Term %d which is newer than remote Term %d not granting vote\n", raft.log.lastTerm(), requestVoteMsgBody.LastLogTerm)
+			log.Printf("have log entries From Term %f which is newer than remote term %f not granting vote\n", raft.log.lastTerm(), requestVoteMsgBody.LastLogTerm)
 		} else if requestVoteMsgBody.LastLogTerm == raft.log.lastTerm() && requestVoteMsgBody.LastLogIndex < raft.log.size() {
-			log.Printf("our logs are both at Term %d but our log is %d and theirs is only %d \n", raft.log.lastTerm(), raft.log.size(), requestVoteMsgBody.LastLogIndex)
+			log.Printf("our logs are both at term %f but our log is %d and theirs is only %d \n", raft.log.lastTerm(), raft.log.size(), requestVoteMsgBody.LastLogIndex)
 		} else {
-			log.Printf("Granting vote To %s\n", msg.Src)
+			log.Printf("Granting vote to %s\n", msg.Src)
 			grant = true
 			raft.votedFor = requestVoteMsgBody.CandidateId
 			raft.resetElectionDeadline()
@@ -77,6 +76,7 @@ func (raft *RaftNode) setupHandlers() error {
 		return err
 	}
 
+	// When we're given entries by a leader
 	appendEntries := func(msg structs.Msg) error {
 		var appendEntriesMsgBody structs.AppendEntriesMsgBody
 		err := mapstructure.Decode(msg.Body, &appendEntriesMsgBody)
@@ -100,17 +100,18 @@ func (raft *RaftNode) setupHandlers() error {
 			return nil
 		}
 
-		// This leader is valid; remember them and don't try To run our own election for a bit
+		// This leader is valid; remember them and don't try to run our own election for a bit
 		raft.leaderId = appendEntriesMsgBody.LeaderId
 		raft.resetElectionDeadline()
 
-		// Check previous entry To see if it matches
+		// Check previous entry to see if it matches
 		if appendEntriesMsgBody.PrevLogIndex <= 0 {
 			return fmt.Errorf("out of bounds previous log index %d \n", appendEntriesMsgBody.PrevLogIndex)
 		}
 
-		if appendEntriesMsgBody.PrevLogIndex < len(raft.log.Entries) && (appendEntriesMsgBody.PrevLogTerm != raft.log.get(appendEntriesMsgBody.PrevLogIndex).Term) {
-			// We disagree on the previous Term
+		if appendEntriesMsgBody.PrevLogIndex >= len(raft.log.Entries) ||
+			(raft.log.get(appendEntriesMsgBody.PrevLogIndex).Term != appendEntriesMsgBody.PrevLogTerm) {
+			// We disagree on the previous term
 			raft.net.reply(msg, result)
 			return nil
 		}
@@ -139,6 +140,7 @@ func (raft *RaftNode) setupHandlers() error {
 		log.Println()
 		if raft.state == StateLeader {
 			// Record who we should tell about the completion of this Op
+			op.Client = msg.Src
 			raft.log.append([]structs.Entry{{
 				Term: raft.currentTerm,
 				Op:   op,
