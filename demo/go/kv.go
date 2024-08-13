@@ -127,7 +127,7 @@ type kvReadOKMessageBody struct {
 	Value any `json:"value"`
 }
 
-// kvWriteMessageBody represents the body for the KV "cas" message.
+// kvWriteMessageBody represents the body for the KV "write" message.
 type kvWriteMessageBody struct {
 	MessageBody
 	Key   string `json:"key"`
