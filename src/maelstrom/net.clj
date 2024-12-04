@@ -5,6 +5,7 @@
             [jepsen [core :as jepsen]
                     [net :as net]
                     [os :as os]]
+            [jepsen.net.proto :as net.proto]
             [maelstrom [util :as u]]
             [maelstrom.net [message :as msg]
                            [journal :as j]]
@@ -102,9 +103,9 @@
          :next-message-id (atom -1)}))
 
 (defn jepsen-net
-  "A jepsen.net/Net which controls this network."
+  "A Jepsen network implementation which controls this virtual network."
   [net]
-  (reify net/Net
+  (reify net.proto/Net
     (drop! [_ test src dest]
       (swap! net update-in [:partitions dest] conj src))
 
