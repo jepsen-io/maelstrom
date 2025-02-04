@@ -1,5 +1,3 @@
-#!/usr/bin/node
-
 // The node object provides support for reading messages from STDIN, writing
 // them to STDOUT, keeping track of basic state, writing pluggable handlers for
 // client RPC requests, and sending our own RPCs.

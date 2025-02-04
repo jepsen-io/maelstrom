@@ -1,4 +1,4 @@
-#!/usr/bin/node
+#!/usr/bin/env node
 
 // A CRDT PN-counter
 var node = require('./node');

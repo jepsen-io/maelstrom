@@ -1,4 +1,4 @@
-#!/usr/bin/node
+#!/usr/bin/env node
 
 // A simple list-append transaction service which stores data in multiple
 // lww-kv thunks referenced by a single root map in lin-kv.
