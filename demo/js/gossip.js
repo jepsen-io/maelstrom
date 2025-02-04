@@ -1,4 +1,4 @@
-#!/usr/bin/node
+#!/usr/bin/env node
 
 // A gossip system which supports the Maelstrom broadcast workload
 var node = require('./node');

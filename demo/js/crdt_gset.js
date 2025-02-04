@@ -1,4 +1,4 @@
-#!/usr/bin/node
+#!/usr/bin/env node
 
 // A CRDT grow-only set
 var node = require('./node');

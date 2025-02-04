@@ -1,4 +1,4 @@
-#!/usr/bin/node
+#!/usr/bin/env node
 
 // A simple list-append transaction service which stores data in a single key
 // in lin-kv.
