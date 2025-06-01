@@ -20,6 +20,7 @@
                                 [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]
+                                [lin-kv-only :as lin-kv-only]
                                 [txn-list-append :as txn-list-append]
                                 [txn-rw-register :as txn-rw-register]
                                 [unique-ids :as unique-ids]]
@@ -42,6 +43,7 @@
    :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload
    :lin-kv          lin-kv/workload
+   :lin-kv-only     lin-kv-only/workload
    :txn-list-append txn-list-append/workload
    :txn-rw-register txn-rw-register/workload
    :unique-ids      unique-ids/workload})
@@ -110,6 +112,7 @@
    {:workload :pn-counter,  :bin "demo/ruby/pn_counter.rb"}
    {:workload :lin-kv,      :bin "demo/ruby/raft.rb", :concurrency 10}
    {:workload :lin-kv       :bin "demo/ruby/lin_kv_proxy.rb", :concurrency 10}
+   {:workload :lin-kv-only, :bin "demo/ruby/lin_kv_proxy.rb", :concurrency 10}
    {:workload     :txn-list-append
     :bin          "demo/ruby/datomic_list_append.rb"}
    {:workload     :txn-rw-register

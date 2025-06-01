@@ -60,6 +60,206 @@
   []
   (PersistentKV. {}))
 
+(defprotocol AppendLog
+  (append-log [this item]
+              "Appends decided item to the log.
+               Returns [new-service-state] with item appended into the log."))
+
+; m is cols of proposed values. reset each round.
+; logger is something that implements AppendLog.
+(defrecord Consensus [m]
+  PersistentService
+  (handle [this message]
+    (let [body (:body message)]
+    (case (:type body)
+      ; proposes a value for decision.
+      ; it is needed to simulate concurrency in consensus
+      ; that in can select only 1 proposal per log slot.
+      "propose" [(assoc-in this [:m] (cons (:value body) m))
+               {:type "propose_ok"}]
+      ; decides on 1 entry from the set of proposed values,
+      ; appends it to the log and cleans up the proposed set.
+      "decide" (if (not (empty? m))
+                  (let [v (first (shuffle m))
+                        ; reset m
+                        this (assoc-in this [:m] (lazy-seq nil))]
+                    [this {:type "decide_ok", :value v}])
+                  [this {:type "error", :code 22, :text "no proposed values"}])
+      ; resets the proposed set.
+      "reset" (let [this (assoc-in this [:m] (lazy-seq nil))]
+                  [this {:type "reset_ok"}])
+      ; log of decided values.
+      "log"    [this {:type "error", :code 10, :text "not supported yet"}]))))
+
+; test: (use 'maelstrom.service :reload)(handle (first (handle (first (handle (consensus) {:body {:type "propose" :key 1  :value 1}})) {:body {:type "propose" :value 2}})) {:body {:type "decide"}})
+; test: (linearizable(consensus))
+;   (use 'maelstrom.service :reload)
+;   (def a (linearizable(consensus)))
+;   (handle! a {:body {:type "propose" :value 1}})
+;   (handle! a {:body {:type "propose" :value 2}})
+;   (handle! a {:body {:type "propose" :value 3}})
+;   a
+; => #maelstrom.service.Linearizable{:state #object[... {:status :ready, :val #maelstrom.service.Consensus{:m (3 2 1)}}]}
+;   (handle! a {:body {:type "decide"}})
+; => {:type "decide_ok", :value 2}
+;   a
+; => ... Consensus{:m ()}}
+(defn consensus
+  "A simple consensus for implementing Maelstrom's `lin-kv` service."
+  []
+  (Consensus. (lazy-seq nil)))
+
+; SDPaxos is an anonymous single-decree Paxos implementation.
+; It decides only for a single register.
+; Log is the last decided value.
+; Con is Consensus.
+; Resets only resets Log so that is can be reused without losing concurrently
+; proposed values.
+(defrecord SDPaxos [log con]
+  PersistentService
+  (handle [this message]
+    (let [body (:body message)]
+    (case (:type body)
+      "propose" (if (empty? log)
+                  (let [[con res] (handle con message)]
+                    [(assoc-in this [:con] con) res])
+                  [this {:type "error", :code 22, :text "already decided"}])
+      "decide"  (if (empty? log)
+                  (let [[con res] (handle con message)
+                      this (assoc-in this [:con] con)]
+                    (if (= (:type res) "error")
+                      [this res]
+                      [(append-log this (get-in res [:value])) res]))
+                  [this {:type "error", :code 22, :text "already decided"}])
+      "reset"   [(assoc-in this [:log] (lazy-seq nil)) {:type "reset_ok"}]
+      "log"     [this
+                 (if (empty? log)
+                   {:type "log_ok", :log []}
+                   {:type "log_ok", :log [(first log)]})
+                   ])))
+  AppendLog
+  (append-log [this item]
+      (assoc-in this [:log] (cons item nil))))
+
+; test: (use 'maelstrom.service :reload)(handle (first (handle (first (handle (sd-paxos) {:body {:type "propose" :value 1}})) {:body {:type "propose" :value 2}})) {:body {:type "decide"}})
+; test: (linearizable(sd-paxos))
+;   (use 'maelstrom.service :reload)
+;   (def a (linearizable(sd-paxos)))
+;   (handle! a {:body {:type "propose" :value 1}})
+;   (handle! a {:body {:type "propose" :value 2}})
+;   (handle! a {:body {:type "propose" :value 3}})
+;   a
+; => #maelstrom.service.Linearizable{:state #object[... {:status :ready, :val #maelstrom.service.SDPaxos{:m (3 2 1)}}]}
+;   (handle! a {:body {:type "decide"}})
+; => {:type "decide_ok", :value 2}
+;   a
+; => ... SDPaxos{:log [2] :m ()}}
+(defn sd-paxos 
+  "A simple consensus for implementing Maelstrom's `lin-kv` service.
+   Single-decree paxos decides only only a single-value."
+  []
+  (SDPaxos. (lazy-seq nil) (Consensus. (lazy-seq nil))))
+
+; MSDPaxos - multi-instance log-style single-decree paxos.
+; Single-decree paxos instance <i> decides for a register <i>.
+; If a value was decided for a register <i>, no new value will be decided for
+; any other register <j> where j <= i.
+; Log is the last decided value for register <i>: (i, val).
+; Con is Consensus.
+; <i> is the current register number.
+(defrecord MSDPaxos [log con i]
+  PersistentService
+  (handle [this message]
+    (let [body (:body message)
+          not_decided? (fn [i] (let [last (first log) ; [i val]
+                                    last_i (if (nil? last) -1 (first last))] ; i or -1
+                                    (< last_i i)))] ; if last decided val < current.
+    (case (:type body)
+      ; propose a value for register i.
+      ; {:value v, :i i}
+      "propose" (let [reqi (:i body)]
+                  (if (nil? reqi)
+                    [this {:type "error", :code 12, :text "missing register number <i>"}]
+                  (if (> reqi i)
+                    (let [
+                          ; for new epoch / register we reset all previous promises.
+                          [con _res] (handle con {:body {:type "reset"}})
+                          ; save our proposal.
+                          [con res] (handle con message)]
+                        [(assoc-in (assoc-in this [:con] con) [:i] reqi) res])
+                    ; for current epoch / register we can propose a value.
+                    (if (and (= reqi i) (not_decided? reqi))
+                      (let [[con res] (handle con message)]
+                        [(assoc-in this [:con] con) res])
+                    [this {:type "error", :code 22, :text "already decided", :i i}]))))
+      ; decide on a value for register i.
+      "decide"  (if (not_decided? i)
+                  (let [[con res] (handle con message)
+                      this (assoc-in this [:con] con)]
+                    (if (= (:type res) "error")
+                      [this res]
+                      [(append-log this [i, (get-in res [:value])]) (assoc-in res [:i] i)]))
+                  [this {:type "error", :code 22, :text "already decided", :i i}])
+      ; not supported yet.
+      "reset"   [(assoc-in this [:log] (lazy-seq nil)) {:type "error", :code 10, :text "not supported"}]
+      ; log of decided values: (i, val).
+      "log"     [this
+                 (if (empty? log)
+                   {:type "log_ok", :log []}
+                   {:type "log_ok", :log [(first log)]})
+                   ])))
+  AppendLog
+  (append-log [this item]
+      (assoc-in this [:log] (cons item nil))))
+
+; test: (use 'maelstrom.service :reload)(handle (first (handle (first (handle (msd-paxos) {:body {:type "propose" :value 1 :i 1}})) {:body {:type "propose" :value 2 :i 1}})) {:body {:type "decide"}})
+; test: (use 'maelstrom.service :reload)(def a (msd-paxos))
+;       (def a (handle (a) {:body {:type "propose" :value 1 :i 1}}))
+;       (def a (handle (first a) {:body {:type "propose" :value 2 :i 1}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log (), :con #maelstrom.service.Consensus{:m (2 1)}, :i 1} {:type "propose_ok"}]
+;       (def a (handle (first a) {:body {:type "decide"}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m ()}, :i 1} {:type "decide_ok", :value 1, :i 1}]
+;
+;       (def a (handle (first a) {:body {:type "decide"}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m ()}, :i 1} {:type "error", :code 22, :text "already decided", :i 1}]
+;       (def a (handle (first a) {:body {:type "propose" :value 2 :i 1}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m ()}, :i 1} {:type "error", :code 22, :text "already decided", :i 1}]
+;
+;       (def a (handle (first a) {:body {:type "propose" :value 3 :i 2}}))
+;       (def a (handle (first a) {:body {:type "propose" :value 4 :i 2}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m (4 3)}, :i 2} {:type "propose_ok"}]
+;       (def a (handle (first a) {:body {:type "propose" :value 4 :i 3}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m (4)}, :i 3} {:type "propose_ok"}]
+;       (def a (handle (first a) {:body {:type "propose" :value 3 :i 3}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([1 1]), :con #maelstrom.service.Consensus{:m (3 4)}, :i 3} {:type "propose_ok"}]
+;       (def a (handle (first a) {:body {:type "decide"}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([3 3]), :con #maelstrom.service.Consensus{:m ()}, :i 3} {:type "decide_ok", :value 3, :i 3}]
+;       (def a (handle (first a) {:body {:type "decide"}}))
+;       a
+;       [#maelstrom.service.MSDPaxos{:log ([3 3]), :con #maelstrom.service.Consensus{:m ()}, :i 3} {:type "error", :code 22, :text "already decided", :i 3}]
+; test: (use 'maelstrom.service :reload)(linearizable(msd-paxos))
+;   (use 'maelstrom.service :reload)
+;   (def a (linearizable(msd-paxos)))
+;   (handle! a {:body {:type "propose" :value 1 :i 1}})
+;   (handle! a {:body {:type "propose" :value 2 :i 1}})
+;   (handle! a {:body {:type "decide" :i 1}})
+;   (handle! a {:body {:type "propose" :value 3 :i 2}})
+;   (handle! a {:body {:type "propose" :value 4 :i 2}})
+;   (handle! a {:body {:type "decide" :i 2}})
+(defn msd-paxos
+  "A simple log-style consensus for implementing Maelstrom's `lin-kv` service.
+   Multi single-decree paxos decides on a register <i> if there is no decided <j> | j >= i."
+  []
+  (MSDPaxos. (lazy-seq nil) (Consensus. (lazy-seq nil)) 0))
+
 ; clock is our local timestamp, which increments on every update.
 ; m is a map of keys to {:ts n, :value whatever}.
 (defrecord LWWKV [clock m]
@@ -293,4 +493,7 @@
   {"lww-kv"  (eventual     (lww-kv))
    "seq-kv"  (sequential   (persistent-kv))
    "lin-kv"  (linearizable (persistent-kv))
-   "lin-tso" (linearizable (persistent-tso))})
+   "lin-tso" (linearizable (persistent-tso))
+   "raw-con" (linearizable (consensus))
+   "sdp-con" (linearizable (sd-paxos))
+   "msdp-con" (linearizable (msd-paxos))})
