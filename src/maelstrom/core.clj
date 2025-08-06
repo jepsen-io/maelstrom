@@ -203,7 +203,7 @@
     :parse-fn parse-long
     :validate [pos? "Must be positive."]]
 
-   [nil "--nemesis FAULTS" "A comma-separated list of faults to inject."
+   [nil "--nemesis FAULTS" "A comma-separated list of faults to inject. The only fault currently is `partition`, which causes randomized network partitions between cluster nodes."
     :default #{}
     :parse-fn (fn [string]
                 (->> (str/split string #"\s*,\s*")
