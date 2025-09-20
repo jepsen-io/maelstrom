@@ -6,4 +6,4 @@ else
     DIR=./
 fi
 
-exec java -Xmx256M -jar "$DIR/target/lab-1.0-SNAPSHOT-jar-with-dependencies.jar" echo
+exec java -Xmx256M -jar "$DIR/target/lab-1.0-SNAPSHOT-jar-with-dependencies.jar" g-counter

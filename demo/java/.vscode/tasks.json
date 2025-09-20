@@ -4,11 +4,8 @@
         {
             "label": "Maelstrom echo test",
             "type": "shell",
-            "command": "./build && cd ../ && ./maelstrom test --bin lab/server -w echo --time-limit 5 --node-count 1",
+            "command": "./build && cd ~/maelstrom && ./maelstrom test --log-stderr --bin ~/lab/echo -w echo --time-limit 5 --node-count 1",
             "args": [],
-            "problemMatcher": [
-                "$tsc"
-            ],
             "presentation": {
                 "reveal": "always"
             },
@@ -20,11 +17,8 @@
         {
             "label": "Maelstrom broadcast test",
             "type": "shell",
-            "command": "./build && cd ../ && ./maelstrom test --bin lab/server -w broadcast --time-limit 10 --node-count 5",
+            "command": "./build && cd ~/maelstrom && ./maelstrom test --log-stderr --bin ~/lab/broadcast -w broadcast --time-limit 20 --rate 100 --node-count 5",
             "args": [],
-            "problemMatcher": [
-                "$tsc"
-            ],
             "presentation": {
                 "reveal": "always"
             },
@@ -34,20 +28,43 @@
             }
         },
         {
-          "label": "Maelstrom txn-list-append test",
-          "type": "shell",
-          "command": "./build && cd ../../ && ./maelstrom test --bin demo/java/server -w txn-list-append --time-limit 10 --node-count 2 --rate 100",
-          "args": [],
-          "problemMatcher": [
-              "$tsc"
-          ],
-          "presentation": {
-              "reveal": "always"
-          },
-          "group": {
-              "kind": "build",
-              "isDefault": true
-          }
-      }
+            "label": "Maelstrom G-set test",
+            "type": "shell",
+            "command": "./build && cd ~/maelstrom && ./maelstrom test --log-stderr --bin ~/lab/g-set -w g-set --time-limit 20 --nemesis partition --rate 5",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Maelstrom G-counter test",
+            "type": "shell",
+            "command": "./build && cd ~/maelstrom && ./maelstrom test --log-stderr --bin ~/lab/g-counter -w g-counter --time-limit 20 --nemesis partition --rate 5",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+                {
+            "label": "Maelstrom txn-list-append test",
+            "type": "shell",
+            "command": "./build && cd ~/maelstrom && ./maelstrom test --log-stderr --bin ~/lab/txn-list-append -w txn-list-append --time-limit 10 --node-count 2 --rate 100",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
     ]
 }
