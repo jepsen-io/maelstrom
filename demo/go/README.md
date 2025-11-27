@@ -15,6 +15,6 @@ the relative path to the `--bin` flag:
 ```sh
 $ cd /path/to/maelstrom-echo
 $ go install .
-$ maelstrom test --bin ~/go/bin/maelstrom-echo ...
+$ maelstrom test -w echo --bin ~/go/bin/maelstrom-echo ...
 ```
 
