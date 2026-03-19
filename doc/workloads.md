@@ -56,7 +56,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "topology_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "topology_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -74,7 +76,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "broadcast_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "broadcast_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -93,7 +97,7 @@ Response:
 ```clj
 {:type (eq "read_ok"),
  :messages [Any],
- {:k :msg_id} Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -119,7 +123,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "echo_ok"), :echo Any, {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "echo_ok"),
+ :echo Any,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -146,7 +153,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "add_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -165,7 +174,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"), :value Int, {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "read_ok"),
+ :value Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -189,7 +201,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "add_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -208,7 +222,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"), :value [Any], {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "read_ok"),
+ :value [Any],
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -306,7 +323,7 @@ Response:
 ```clj
 {:type (eq "send_ok"),
  :offset (named Int "offset"),
- {:k :msg_id} Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -352,9 +369,13 @@ Response:
 {:type (eq "poll_ok"),
  :msgs
  {(named Str "key")
-  [[{:schema (named Int "offset"), :optional? false, :name "offset"}
-    {:schema (named Any "msg"), :optional? false, :name "msg"}]]},
- {:k :msg_id} Int,
+  [[#schema.core.One{:schema (named Int "offset"),
+                     :optional? false,
+                     :name "offset"}
+    #schema.core.One{:schema (named Any "msg"),
+                     :optional? false,
+                     :name "msg"}]]},
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -385,7 +406,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "commit_offsets_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "commit_offsets_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -409,7 +432,7 @@ Response:
 ```clj
 {:type (eq "list_committed_offsets_ok"),
  :offsets {(named Str "key") (named Int "offset")},
- {:k :msg_id} Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -434,14 +457,17 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"), :value Any, {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "read_ok"),
+ :value Any,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
 ### RPC: Write! 
 
 Blindly overwrites the value of a key. Creates keys if they do not presently
-exist. Servers should respond with a `read_ok` response once the write is
+exist. Servers should respond with a `write_ok` response once the write is
 complete. 
 
 Request:
@@ -453,7 +479,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "write_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "write_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -472,10 +500,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "cas_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "cas_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
-
-
 
 ## Workload: Lin-kv-reconfig 
 
@@ -515,7 +543,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_member_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "add_member_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -536,9 +566,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "remove_member_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "remove_member_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
-
 
 
 ## Workload: Pn-counter 
@@ -563,7 +594,9 @@ Request:
 Response:
 
 ```clj
-{:type (eq "add_ok"), {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "add_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -582,7 +615,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "read_ok"), :value Int, {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "read_ok"),
+ :value Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
@@ -674,7 +710,7 @@ Response:
  [(either
    [(one (eq "r") "f") (one Any "k") (one [Any] "v")]
    [(one (eq "append") "f") (one Any "k") (one Any "v")])],
- {:k :msg_id} Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -770,7 +806,7 @@ Response:
  [(either
    [(one (eq "r") "f") (one Any "k") (one Any "v")]
    [(one (eq "w") "f") (one Any "k") (one Any "v")])],
- {:k :msg_id} Int,
+ #schema.core.OptionalKey{:k :msg_id} Int,
  :in_reply_to Int}
 ```
 
@@ -815,7 +851,10 @@ Request:
 Response:
 
 ```clj
-{:type (eq "generate_ok"), :id Any, {:k :msg_id} Int, :in_reply_to Int}
+{:type (eq "generate_ok"),
+ :id Any,
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
 ```
 
 
