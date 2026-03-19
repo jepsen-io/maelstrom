@@ -48,9 +48,10 @@
             (let [res (client/rpc!
                         client
                         node-id
-                        {:type "init"
-                         :node_id node-id
-                         :node_ids (:nodes test)}
+                        (merge {:type "init"
+                                :node_id node-id
+                                :node_ids (:nodes test)}
+                               (:init-extra test))
                         10000)]
               (when (not= "init_ok" (:type res))
                 (throw+ {:type      :init-failed

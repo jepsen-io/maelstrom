@@ -41,4 +41,8 @@
   :name      :txn-conflict
   :definite? true
   :doc       "The requested transaction has been aborted because of a conflict with another transaction. Servers need not return this error on every conflict: they may choose to retry automatically instead."}
+ {:code      40
+  :name      :not-a-member
+  :definite? true
+  :doc       "The node is not currently a member of the cluster, and therefore cannot process the request. Used by the lin-kv-reconfig workload, where cluster membership changes dynamically via add_member and remove_member RPCs."}
  ]

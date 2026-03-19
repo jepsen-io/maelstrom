@@ -20,6 +20,7 @@
                                 [g-counter :as g-counter]
                                 [pn-counter :as pn-counter]
                                 [lin-kv :as lin-kv]
+                                [lin-kv-reconfig :as lin-kv-reconfig]
                                 [txn-list-append :as txn-list-append]
                                 [txn-rw-register :as txn-rw-register]
                                 [unique-ids :as unique-ids]]
@@ -42,6 +43,7 @@
    :g-counter       g-counter/workload
    :pn-counter      pn-counter/workload
    :lin-kv          lin-kv/workload
+   :lin-kv-reconfig lin-kv-reconfig/workload
    :txn-list-append txn-list-append/workload
    :txn-rw-register txn-rw-register/workload
    :unique-ids      unique-ids/workload})
@@ -80,7 +82,7 @@
                     generator)]
     (merge tests/noop-test
            opts
-           (dissoc workload :final-generator)
+           (dissoc workload :final-generator :stats-checker)
            {:name    (str (name workload-name))
             :nodes   nodes
             :ssh     {:dummy? true}
@@ -93,8 +95,9 @@
                                       {:nemeses (:perf nemesis-package)})
                         :timeline   (timeline/html)
                         :exceptions (checker/unhandled-exceptions)
-                        :stats      (-> (checker/stats)
-                                        jepsen.kafka/stats-checker)
+                        :stats      (or (:stats-checker workload)
+                                        (-> (checker/stats)
+                                            jepsen.kafka/stats-checker))
                         :availability (availability-checker)
                         :net        (net.checker/checker)
                         :workload   (:checker workload)})
@@ -163,6 +166,11 @@
                 (map keyword (str/split s #"\s+,\s+")))
     :validate [(partial every? cm/friendly-model-name)
                (cli/one-of (sort (map cm/friendly-model-name cm/all-models)))]]
+
+   [nil "--initial-member-count INT" "For the lin-kv-reconfig workload, how many nodes are initial cluster members."
+    :default 3
+    :parse-fn parse-long
+    :validate [pos? "must be positive"]]
 
    [nil "--key-count INT" "For the append test, how many keys should we test at once?"
     :parse-fn parse-long
