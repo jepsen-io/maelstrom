@@ -27,6 +27,7 @@ messages that you'll need to handle.
 - [G-set](#workload-g-set)
 - [Kafka](#workload-kafka)
 - [Lin-kv](#workload-lin-kv)
+- [Lin-kv-reconfig](#workload-lin-kv-reconfig)
 - [Pn-counter](#workload-pn-counter)
 - [Txn-list-append](#workload-txn-list-append)
 - [Txn-rw-register](#workload-txn-rw-register)
@@ -504,6 +505,71 @@ Response:
  :in_reply_to Int}
 ```
 
+## Workload: Lin-kv-reconfig 
+
+A workload for a linearizable key-value store with dynamic cluster
+membership reconfiguration. Extends lin-kv by sending add_member and
+remove_member RPCs to change the cluster membership during the test.
+
+All nodes are spawned at startup, but only a subset are initial members.
+The init message includes an `initial_member_ids` field so nodes know
+whether they should participate in consensus from the start. Non-member
+nodes wait for an `add_member` command before joining.
+
+Maelstrom randomly picks nodes to add or remove without tracking actual
+membership state. The SUT is responsible for:
+- Treating add/remove of already-added/removed nodes as a no-op or error
+- Rejecting removes that would reduce the cluster below a viable size
+- Rejecting concurrent reconfigurations (e.g. Raft single-change rule)
+
+If a node is not a member, it returns error code 40 (:not-a-member) for
+KV operations, which is a definite failure. The linearizability checker
+treats these as operations that did not happen. 
+
+### RPC: Add-member! 
+
+Adds a node to the cluster. Sent to any node, which should propose the
+membership change to the cluster (or forward to the leader). The target
+node should begin participating in consensus once the membership change
+commits. If the node is already a member, the server may treat this as a
+no-op success or return an error. 
+
+Request:
+
+```clj
+{:type (eq "add_member"), :node_id java.lang.String, :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "add_member_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
+
+
+### RPC: Remove-member! 
+
+Removes a node from the cluster. Sent to any node, which should propose
+the membership change to the cluster (or forward to the leader). The
+target node should stop participating in consensus once the membership
+change commits. If the node is already not a member, the server may treat
+this as a no-op success or return an error. 
+
+Request:
+
+```clj
+{:type (eq "remove_member"), :node_id java.lang.String, :msg_id Int}
+```
+
+Response:
+
+```clj
+{:type (eq "remove_member_ok"),
+ #schema.core.OptionalKey{:k :msg_id} Int,
+ :in_reply_to Int}
+```
 
 
 ## Workload: Pn-counter 

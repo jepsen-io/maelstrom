@@ -165,3 +165,4 @@ The following table lists all of Maelstrom's defined errors.
 | 21 | key-already-exists | ✓ | The client requested the creation of a key which already exists, and the server will not overwrite it. |
 | 22 | precondition-failed | ✓ | The requested operation expected some conditions to hold, and those conditions were not met. For instance, a compare-and-set operation might assert that the value of a key is currently 5; if the value is 3, the server would return `precondition-failed`. |
 | 30 | txn-conflict | ✓ | The requested transaction has been aborted because of a conflict with another transaction. Servers need not return this error on every conflict: they may choose to retry automatically instead. |
+| 40 | not-a-member | ✓ | The node is not currently a member of the cluster, and therefore cannot process the request. Used by the lin-kv-reconfig workload, where cluster membership changes dynamically via add_member and remove_member RPCs. |

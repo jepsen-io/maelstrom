@@ -205,7 +205,9 @@ class RaftNode():
 
         # Node & cluster IDS
         self.node_id = None     # Our node ID
-        self.node_ids = None    # List of all node IDs
+        self.initial_node_ids = None  # Initial cluster membership from init
+        self.node_ids = None    # Current cluster membership (updated immediately
+                                # when config entries are appended, not on commit)
 
         # Raft state
         self.state = 'nascent'  # One of nascent, follower, candidate, or leader
@@ -226,10 +228,45 @@ class RaftNode():
         self.state_machine = KVStore()
         self.setup_handlers()
 
+    def is_member(self):
+        """Are we currently a member of the cluster?"""
+        return self.node_ids is not None and self.node_id in self.node_ids
+
+    def has_pending_config(self):
+        """Is there a config change entry that hasn't been applied yet?
+        We only allow one config change at a time."""
+        for i in range(self.last_applied + 1, self.log.size() + 1):
+            op = self.log.get(i).get('op')
+            if op and op.get('type') in ('add_member', 'remove_member'):
+                return True
+        return False
+
+    def has_committed_in_current_term(self):
+        """Has any entry from the current term been committed?
+        Used to enforce the no-op guard: a leader must commit an entry in its
+        own term before accepting config changes (Raft thesis bug fix)."""
+        return self.commit_index >= 1 and \
+               self.log.get(self.commit_index)['term'] == self.current_term
+
+    def rebuild_config(self):
+        """Reconstruct node_ids from initial config + all config entries in the
+        log. Called after log truncation to handle reverted config changes."""
+        self.node_ids = list(self.initial_node_ids)
+        for i in range(2, self.log.size() + 1):
+            op = self.log.get(i).get('op')
+            if op and op.get('type') == 'add_member':
+                if op['node_id'] not in self.node_ids:
+                    self.node_ids.append(op['node_id'])
+            elif op and op.get('type') == 'remove_member':
+                if op['node_id'] in self.node_ids:
+                    self.node_ids.remove(op['node_id'])
+        log('Config rebuilt to:', self.node_ids)
+
     def other_nodes(self):
-        """All nodes except this one."""
+        """All nodes in the current config except this one."""
         nodes = list(self.node_ids)
-        nodes.remove(self.node_id)
+        if self.node_id in nodes:
+            nodes.remove(self.node_id)
         return nodes
 
     def match_index(self):
@@ -342,6 +379,11 @@ class RaftNode():
         self.reset_step_down_deadline()
         log('Became leader for term', self.current_term)
 
+        # Append a no-op entry. Once committed, this guarantees we know the
+        # latest committed config before accepting config changes. This is
+        # the fix for the Raft thesis single-server membership change bug.
+        self.log.append([{'term': self.current_term, 'op': None}])
+
     # Actions for all nodes
 
     def advance_state_machine(self):
@@ -349,10 +391,35 @@ class RaftNode():
         if self.last_applied < self.commit_index:
             # Advance the applied index and apply that op
             self.last_applied += 1
-            res = self.state_machine.apply(self.log.get(self.last_applied)['op'])
-            if self.state == 'leader':
-                # We were the leader, let's respond to the client.
-                self.net.send(res['dest'], res['body'])
+            entry = self.log.get(self.last_applied)
+            op = entry['op']
+
+            if op is None:
+                # No-op entry, skip
+                pass
+            elif op['type'] in ('add_member', 'remove_member'):
+                # Config already took effect when appended; just respond
+                if self.state == 'leader' and 'client' in op:
+                    self.net.send(op['client'], {
+                        'type': op['type'] + '_ok',
+                        'in_reply_to': op['msg_id']
+                    })
+                # Clean up leader state for removed node
+                if op['type'] == 'remove_member' and self.state == 'leader':
+                    self.next_index.pop(op['node_id'], None)
+                    self._match_index.pop(op['node_id'], None)
+                # Step down if we committed our own removal
+                if op['type'] == 'remove_member' and \
+                        op['node_id'] == self.node_id and \
+                        self.state == 'leader':
+                    log('Committed own removal, stepping down')
+                    self.become_follower()
+            else:
+                # KV operation
+                res = self.state_machine.apply(op)
+                if self.state == 'leader':
+                    # We were the leader, let's respond to the client.
+                    self.net.send(res['dest'], res['body'])
 
         # We did something!
         return True
@@ -362,11 +429,12 @@ class RaftNode():
     def election(self):
         """If it's been long enough, trigger a leader election."""
         if self.election_deadline < time.time():
-            if self.state == 'follower' or self.state == 'candidate':
+            if (self.state == 'follower' or self.state == 'candidate') \
+                    and self.is_member():
                 # Let's go!
                 self.become_candidate()
             else:
-                # We're a leader, or initializing; sleep again
+                # We're a leader, not a member, or initializing; sleep again
                 self.reset_election_deadline()
             return True
 
@@ -382,7 +450,12 @@ class RaftNode():
     def advance_commit_index(self):
         """If we're the leader, advance our commit index based on what other nodes match us."""
         if self.state == 'leader':
-            n = median(self.match_index().values())
+            # Only count nodes in the current config for majority.
+            # This handles the case where a leader has removed itself:
+            # it should not count its own vote.
+            mi = {k: v for k, v in self.match_index().items()
+                   if k in self.node_ids}
+            n = median(mi.values())
             if self.commit_index < n and self.log.get(n)['term'] == self.current_term:
                 log("Commit index now", n)
                 self.commit_index = n
@@ -400,7 +473,8 @@ class RaftNode():
 
         if self.state == 'leader' and self.min_replication_interval < elapsed_time:
             # We're a leader, and enough time elapsed
-            for node in self.other_nodes():
+            # Replicate to all nodes we're tracking (includes pending additions)
+            for node in list(self.next_index.keys()):
                 # What entries should we send this node?
                 ni = self.next_index[node]
                 entries = self.log.from_index(ni)
@@ -418,6 +492,8 @@ class RaftNode():
                         self.maybe_step_down(body['term'])
                         if self.state == 'leader' and term == self.current_term:
                             self.reset_step_down_deadline()
+                            if _node not in self.next_index:
+                                return  # Node was removed
                             if body['success']:
                                 self.next_index[_node] = \
                                         max(self.next_index[_node], _ni + len(_entries))
@@ -456,11 +532,15 @@ class RaftNode():
 
             body = msg['body']
             self.set_node_id(body['node_id'])
-            self.node_ids = body['node_ids']
+            # Use initial_member_ids if present (for lin-kv-reconfig workload),
+            # otherwise fall back to node_ids (standard behavior).
+            self.initial_node_ids = list(
+                body.get('initial_member_ids', body['node_ids']))
+            self.node_ids = list(self.initial_node_ids)
 
             self.become_follower()
 
-            log('I am:', self.node_id)
+            log('I am:', self.node_id, 'members:', self.node_ids)
             self.net.reply(msg, {'type': 'init_ok'})
 
         self.net.on('init', raft_init)
@@ -538,6 +618,11 @@ class RaftNode():
             self.log.truncate(body['prev_log_index'])
             self.log.append(body['entries'])
 
+            # Rebuild config from log in case truncation reverted config
+            # entries or new entries contain config changes. Config takes
+            # effect immediately on append.
+            self.rebuild_config()
+
             # Advance commit pointer
             if self.commit_index < body['leader_commit']:
                 self.commit_index = min(body['leader_commit'], self.log.size(),)
@@ -550,7 +635,13 @@ class RaftNode():
 
         # Handle client KV requests
         def kv_req(msg):
-            if self.state == 'leader':
+            if not self.is_member():
+                self.net.reply(msg, {
+                    'type': 'error',
+                    'code': 40,
+                    'text': 'not a member'
+                    })
+            elif self.state == 'leader':
                 # Record who we should tell about the completion of this op
                 op = msg['body']
                 op['client'] = msg['src']
@@ -569,6 +660,62 @@ class RaftNode():
         self.net.on('read', kv_req)
         self.net.on('write', kv_req)
         self.net.on('cas', kv_req)
+
+        # Handle membership change requests
+        def config_change_req(msg):
+            if not self.is_member():
+                self.net.reply(msg, {
+                    'type': 'error',
+                    'code': 11,
+                    'text': 'not a member'
+                    })
+            elif self.state != 'leader':
+                if self.leader:
+                    # Proxy to leader
+                    msg['dest'] = self.leader
+                    self.net.send_msg(msg)
+                else:
+                    self.net.reply(msg, {
+                        'type': 'error',
+                        'code': 11,
+                        'text': 'not a leader'
+                        })
+            elif not self.has_committed_in_current_term():
+                # Raft thesis bug fix: reject config changes until we've
+                # committed an entry in our current term (the no-op).
+                self.net.reply(msg, {
+                    'type': 'error',
+                    'code': 11,
+                    'text': 'no entry committed in current term yet'
+                    })
+            elif self.has_pending_config():
+                self.net.reply(msg, {
+                    'type': 'error',
+                    'code': 11,
+                    'text': 'config change already pending'
+                    })
+            else:
+                op = msg['body']
+                op['client'] = msg['src']
+                self.log.append([{'term': self.current_term, 'op': op}])
+
+                # Config takes effect immediately on append
+                if op['type'] == 'add_member':
+                    if op['node_id'] not in self.node_ids:
+                        self.node_ids.append(op['node_id'])
+                    # Start replicating to the new node
+                    if op['node_id'] not in self.next_index:
+                        self.next_index[op['node_id']] = self.log.size() + 1
+                        self._match_index[op['node_id']] = 0
+                elif op['type'] == 'remove_member':
+                    if op['node_id'] in self.node_ids:
+                        self.node_ids.remove(op['node_id'])
+
+                log('Proposed config change:', op['type'], op['node_id'],
+                    'config now:', self.node_ids)
+
+        self.net.on('add_member', config_change_req)
+        self.net.on('remove_member', config_change_req)
 
     def main(self):
         """Mainloop."""
