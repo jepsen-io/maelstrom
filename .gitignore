@@ -17,4 +17,7 @@ store/
 .DS_Store
 .idea
 /demo/rust/target
+/demo/go/cmd/maelstrom-raft/maelstrom-raft
+/demo/go/cmd/maelstrom-raft/vendor
+maelstrom
 __pycache__/

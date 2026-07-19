@@ -75,9 +75,18 @@ func (n *Node) Handle(typ string, fn HandlerFunc) {
 // and delegates them to the appropriate registered handler. This should be
 // the last function executed by main().
 func (n *Node) Run() error {
-	scanner := bufio.NewScanner(n.Stdin)
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	reader := bufio.NewReader(n.Stdin)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err.Error() == "EOF" {
+				// Print the last line
+				fmt.Print(line)
+				break
+			}
+			return fmt.Errorf("error reading line %w", err)
+			break
+		}
 
 		// Parse next line from STDIN as a JSON-formatted message.
 		var msg Message
@@ -129,13 +138,9 @@ func (n *Node) Run() error {
 			n.handleMessage(h, msg)
 		}()
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
 
 	// Wait for all in-flight handlers to complete.
 	n.wg.Wait()
-
 	return nil
 }
 
